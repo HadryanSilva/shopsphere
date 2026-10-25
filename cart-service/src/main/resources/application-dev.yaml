@@ -1,0 +1,23 @@
+server:
+  port: 8082
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cart_db
+    username: postgres
+    password: postgres
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: validate
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/shopsphere
+          audiences:
+            - shopsphere-api
+
+services:
+  catalog:
+    url: http://localhost:8081

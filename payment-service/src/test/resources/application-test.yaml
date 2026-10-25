@@ -1,0 +1,20 @@
+﻿spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+  flyway:
+    enabled: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://issuer.shopsphere.test
+          audiences: []
+
+services:
+  catalog:
+    url: http://catalog.invalid
+  cart:
+    url: http://cart.invalid
+  order:
+    url: http://order.invalid

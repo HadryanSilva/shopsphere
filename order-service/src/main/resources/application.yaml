@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: order-service
+  cloud:
+    openfeign:
+      client:
+        config:
+          cart-service:
+            connectTimeout: 2000
+            readTimeout: 5000
+          catalog-service:
+            connectTimeout: 2000
+            readTimeout: 5000

@@ -1,0 +1,9 @@
+﻿services:
+  catalog:
+    url: http://catalog.invalid
+  cart:
+    url: http://cart.invalid
+  order:
+    url: http://order.invalid
+  inventory:
+    url: http://inventory.invalid

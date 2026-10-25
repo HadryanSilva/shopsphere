@@ -1,0 +1,28 @@
+server:
+  port: 8083
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${SHOPSPHERE_JWT_ISSUER:http://localhost:8180/realms/shopsphere}
+          audiences: ${SHOPSPHERE_JWT_AUDIENCE:}
+  datasource:
+    url: jdbc:postgresql://localhost:5432/order_db
+    username: postgres
+    password: postgres
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: validate
+  data:
+    web:
+      pageable:
+        max-page-size: 100
+
+services:
+  catalog:
+    url: http://localhost:8081
+  cart:
+    url: http://localhost:8082

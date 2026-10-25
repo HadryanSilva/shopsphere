@@ -1,0 +1,20 @@
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/shopsphere
+          audiences:
+            - shopsphere-api
+
+services:
+  catalog:
+    url: http://localhost:8081
+  cart:
+    url: http://localhost:8082
+  order:
+    url: http://localhost:8083
+  inventory:
+    url: ${SHOPSPHERE_INVENTORY_URL:http://localhost:8084}
+    connect-timeout: ${SHOPSPHERE_INVENTORY_CONNECT_TIMEOUT:2000}
+    read-timeout: ${SHOPSPHERE_INVENTORY_READ_TIMEOUT:5000}

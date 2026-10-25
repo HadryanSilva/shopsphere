@@ -1,0 +1,27 @@
+{
+  "clientId": "shopsphere-order",
+  "enabled": true,
+  "protocol": "openid-connect",
+  "clientAuthenticatorType": "client-secret",
+  "publicClient": false,
+  "bearerOnly": false,
+  "serviceAccountsEnabled": true,
+  "standardFlowEnabled": false,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "fullScopeAllowed": false,
+  "defaultClientScopes": ["roles"],
+  "optionalClientScopes": [],
+  "protocolMappers": [
+    {
+      "name": "shopsphere-api-audience",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "config": {
+        "included.custom.audience": "shopsphere-api",
+        "access.token.claim": "true",
+        "id.token.claim": "false"
+      }
+    }
+  ]
+}

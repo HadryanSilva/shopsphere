@@ -1,0 +1,23 @@
+server:
+  port: 8081
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/shopsphere
+          audiences:
+            - shopsphere-api
+  datasource:
+    url: jdbc:postgresql://localhost:5432/catalog_db
+    username: postgres
+    password: postgres
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: validate
+  data:
+    web:
+      pageable:
+        max-page-size: 100

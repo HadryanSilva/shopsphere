@@ -1,0 +1,18 @@
+server:
+  port: ${SHOPSPHERE_INVENTORY_PORT:8084}
+
+spring:
+  datasource:
+    url: ${SHOPSPHERE_INVENTORY_DB_URL:jdbc:postgresql://localhost:5432/inventory_db}
+    username: ${SHOPSPHERE_INVENTORY_DB_USER:postgres}
+    password: ${SHOPSPHERE_INVENTORY_DB_PASSWORD:postgres}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${SHOPSPHERE_JWT_ISSUER:http://localhost:8180/realms/shopsphere}
+          audiences: ${SHOPSPHERE_JWT_AUDIENCE:shopsphere-api}
+
+services:
+  catalog:
+    url: ${SHOPSPHERE_CATALOG_URL:http://localhost:8081}

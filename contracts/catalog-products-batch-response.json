@@ -1,0 +1,26 @@
+[
+  {
+    "id": "20000000-0000-0000-0000-000000000001",
+    "name": "Keyboard",
+    "description": "USB keyboard",
+    "categoryId": "10000000-0000-0000-0000-000000000001",
+    "price": 49.90,
+    "currency": "EUR",
+    "imageUrl": null,
+    "status": "ACTIVE",
+    "createdAt": "2026-10-24T12:00:00Z",
+    "updatedAt": "2026-10-24T12:00:00Z"
+  },
+  {
+    "id": "20000000-0000-0000-0000-000000000002",
+    "name": "Mouse",
+    "description": "USB mouse",
+    "categoryId": "10000000-0000-0000-0000-000000000001",
+    "price": 19.90,
+    "currency": "EUR",
+    "imageUrl": null,
+    "status": "OUT_OF_STOCK",
+    "createdAt": "2026-10-24T12:00:00Z",
+    "updatedAt": "2026-10-24T12:00:00Z"
+  }
+]
