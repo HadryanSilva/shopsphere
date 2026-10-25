@@ -1,0 +1,22 @@
+# Arquivos locais de IDEs e ferramentas
+.idea/
+.vscode/
+.codex/
+.aws/
+*.iml
+*.iws
+*.ipr
+
+# Cache e artefatos na raiz; os módulos mantêm seus próprios .gitignore
+/.gradle/
+/build/
+
+# Variáveis locais; exemplos sem segredos podem ser versionados
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Arquivos locais do sistema operativo
+.DS_Store
+Thumbs.db
