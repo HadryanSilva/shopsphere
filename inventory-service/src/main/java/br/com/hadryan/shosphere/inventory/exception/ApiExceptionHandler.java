@@ -1,6 +1,7 @@
 package br.com.hadryan.shosphere.inventory.exception;
 
 import jakarta.validation.ConstraintViolationException;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -81,7 +82,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         if (exception instanceof AccessDeniedException || exception instanceof AuthenticationException) {
             throw exception;
         }
-        logger.error("Unhandled API exception: " + exception.getClass().getName());
+        logger.error("Unhandled API exception requestId=" + MDC.get("requestId")
+                + " failureType=" + exception.getClass().getName());
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.", request, List.of());
     }
 

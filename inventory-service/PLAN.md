@@ -158,8 +158,8 @@ para ligar Order ao Inventory fica numa decisão posterior específica.
 ## Microtarefas propostas, por dependência
 
 Cada linha representa uma entrega separada. A análise inicial e a microtarefa
-29 a 40 estão concluídas; a execução da lista continua incremental. Reservas fazem
-parte do escopo aprovado. A próxima entrega é a microtarefa 41.
+29 a 41 estão concluídas; reservas fazem parte do escopo aprovado.
+A ligação ao checkout exige a decisão específica descrita ao final deste plano.
 
 | Nº | Entrega | Depende de | Critério de conclusão |
 |---|---|---|---|
@@ -175,7 +175,7 @@ parte do escopo aprovado. A próxima entrega é a microtarefa 41.
 | 38 | Liberar e confirmar reserva | 37 | Concluída: POSTs internos, matriz de estados/prazo, confirmação e devolução atômicas e idempotentes. Confirmação valida prazo após locks; liberação vencida marca EXPIRED. Concorrência, rollback e 100 itens validados com PostgreSQL; sem nova migration. Job na etapa 39. |
 | 39 | Tratar expiração e reconciliação | 38 | Concluída: job padrão PT60S/lote 50 configuráveis, cursor por prazo/pedido, worker REQUIRES_NEW com SKIP LOCKED e recuperação após reinício. Falhas isoladas não bloqueiam páginas seguintes; V4 adiciona índice, sem editar V1–V3. Concorrência e rollback validados com PostgreSQL. |
 | 40 | Expor somente as operações necessárias pelo Gateway | APIs aprovadas | Concluída: cinco caminhos/verbos administrativos com ADMIN, URL configurável, timeouts dedicados e transporte preservado. Reservas internas sem rota e acesso negado mesmo a ADMIN. Suíte do Gateway: 78 aprovados, sem falhas ou ignorados; sem mudança no domínio de Inventory. |
-| 41 | Acrescentar observabilidade mínima | APIs e reservas estáveis | Logs sem credenciais, correlação e sinais para falhas/conflitos/reservas pendentes; decidir health/métricas e exposição antes de acrescentar dependências ou infraestrutura. |
+| 41 | Acrescentar observabilidade mínima | APIs e reservas estáveis | Concluída: correlação HTTP local, logs seguros por status e resumo de expiração com resultados/falhas. Health/métricas sem exposição nesta entrega; sem novas dependências. Testes e limitação de PostgreSQL em TESTING.md; detalhes em OBSERVABILITY.md. |
 
 Não concentrar todos os testes na tarefa 41: cada entrega deve incluir testes
 focados e os testes PostgreSQL pertinentes. Ajustar a numeração/escopo se uma

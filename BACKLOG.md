@@ -152,7 +152,14 @@ status e Location preservados. Suíte completa do Gateway: 78 aprovados,
 nenhuma falha ou teste ignorado. Sem migration, mudança de dependências ou
 alteração no domínio de Inventory.
 Detalhes em [api-gateway/INVENTORY.md](api-gateway/INVENTORY.md).
-A próxima microtarefa é a **41 — Acrescentar observabilidade mínima**.
+A microtarefa **41 — Acrescentar observabilidade mínima** foi concluída:
+correlação HTTP local com X-Request-ID/MDC, logs seguros por status e contadores
+por varredura de expiração. Sem novas dependências ou endpoints de health/métricas.
+Detalhes em [inventory-service/OBSERVABILITY.md](inventory-service/OBSERVABILITY.md)
+e validação em [inventory-service/TESTING.md](inventory-service/TESTING.md).
+Na execução inicial, PostgreSQL estava indisponível. Revalidação em 2026-10-26:
+68 testes PostgreSQL e um teste com token real Keycloak aprovados, sem falhas
+ou ignorados, encerrando essa pendência de infraestrutura.
 As reservas fazem parte da primeira entrega aprovada;
 a ligação ao checkout continua para uma etapa posterior com decisão própria.
 Implementar uma entrega de cada vez, após resolver suas decisões de contrato,

@@ -306,3 +306,56 @@ Upgrade V3→V4 validou o índice e preservou estoque/reserva até o processamen
 explícito pelo job. V4 e fixtures foram aplicadas somente em schemas temporários
 próprios. Nenhum dado de uso normal, configuração de Keycloak ou outro serviço
 foi alterado.
+
+## Observabilidade mínima — microtarefa 41
+
+Detalhes, arquivos e limites em [OBSERVABILITY.md](OBSERVABILITY.md).
+Executados no módulo Inventory:
+
+- `.\gradlew.bat test --offline --no-daemon --tests '*RequestCorrelationFilterTests' --tests '*ReservationExpirationJobTests' --tests '*ApiExceptionHandlerTests'`
+- `.\gradlew.bat test --offline --no-daemon --tests '*RequestCorrelationFilterTests' --tests '*ReservationExpirationJobTests' --tests '*ApiExceptionHandlerTests' --tests '*InventoryJwtSecurityTests'`
+- `.\gradlew.bat test --offline --no-daemon`
+
+Todos os comandos terminaram com BUILD SUCCESSFUL. O conjunto focado ampliado
+contabilizou 61 testes: 60 aprovados e um teste opcional de token real ignorado.
+A suíte completa contabilizou 243 testes: 184 aprovados, zero falhas/erros e
+59 ignorados pelas condições existentes de ambiente. PostgreSQL não estava
+acessível em localhost:5432 e SHOPSPHERE_TEST_POSTGRES_URL não foi configurada;
+os testes condicionados ao banco não foram revalidados. Também não foi fornecido
+o token opcional de Keycloak. Nenhuma migration foi executada nesta entrega.
+
+Validados correlação em 401/403 e sucesso com a cadeia real de segurança,
+status 409/502/503, UUID local ignorando header recebido, ausência de dados
+sensíveis nos eventos, restauração do MDC após falha e preservação de outras
+entradas. O job foi validado para contagem de expirados/ignorados/falhas,
+continuação após falha individual e resumo de consulta interrompida sem
+suprimir sua exceção. `git diff --check` sem erros de whitespace.
+
+## Reexecução das integrações ignoradas — 2026-10-26
+
+Com PostgreSQL e Keycloak locais disponíveis, foram executados somente os
+conjuntos anteriormente condicionados à infraestrutura:
+
+- PostgreSQL: SHOPSPHERE_TEST_POSTGRES_URL=jdbc:postgresql://localhost:5432/inventory_db;
+  `.\gradlew.bat test --offline --no-daemon --rerun-tasks` com oito seletores
+  `--tests` de classe completa no package br.com.hadryan.shosphere.inventory.persistence:
+  InventoryAdjustmentPersistenceTests, InventoryQueryPersistenceTests,
+  InventoryRegistrationPersistenceTests, InventoryReservationCreationTests,
+  InventoryReservationTransitionTests, InventoryReservationExpirationTests,
+  InventoryReservationPersistenceTests e InventoryStartupPersistenceTests.
+  Resultado XML: 68 testes aprovados, zero falhas/erros e zero ignorados.
+- Keycloak: `.\gradlew.bat test --offline --no-daemon --tests '*InventoryJwtSecurityTests.acceptsProvisionedLocalKeycloakServiceToken'`.
+  Token de client_credentials obtido do cliente local shopsphere-order existente,
+  mantido somente em memória e na variável do processo de teste; variável removida
+  ao terminar. Resultado XML: um teste aprovado, zero falhas/erros e zero ignorados.
+
+Total desta reexecução: 69 testes aprovados. Os 59 ignorados da execução anterior
+incluíam casos parametrizados que, habilitados, geram mais casos executáveis.
+Não foi repetida a suíte inteira nesta revalidação.
+
+A primeira tentativa de banco parou por falta de acesso à cache Gradle fora do
+workspace; foi repetida com autorização. O filtro inicial '*persistence.*' foi
+expandido para um nome de arquivo e não encontrou testes; a execução final usou
+os oito nomes completos acima. Não foi necessário alterar código ou testes.
+As migrations foram exercitadas apenas nos schemas temporários dos testes.
+Não houve alteração de configuração do Keycloak nem de dados de uso normal.

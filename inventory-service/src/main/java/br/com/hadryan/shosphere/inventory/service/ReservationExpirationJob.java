@@ -35,23 +35,44 @@ public class ReservationExpirationJob {
         var cutoff = Instant.now();
         Instant afterExpiry = null;
         UUID afterId = null;
-        while (true) {
-            var candidates = afterExpiry == null
-                    ? reservations.findExpirationCandidates(InventoryReservationStatus.ACTIVE, cutoff, PageRequest.of(0, batchSize))
-                    : reservations.findExpirationCandidatesAfter(InventoryReservationStatus.ACTIVE, cutoff,
-                            afterExpiry, afterId, PageRequest.of(0, batchSize));
-            for (var candidate : candidates) {
-                try {
-                    expire.execute(candidate.getOrderId());
-                } catch (RuntimeException failure) {
-                    log.warn("Inventory reservation expiration failed for order {} ({})",
-                            candidate.getOrderId(), failure.getClass().getSimpleName());
+        var sweepId = UUID.randomUUID();
+        int scanned = 0;
+        int expired = 0;
+        int skipped = 0;
+        int failed = 0;
+        boolean completed = false;
+        try {
+            while (true) {
+                var candidates = afterExpiry == null
+                        ? reservations.findExpirationCandidates(InventoryReservationStatus.ACTIVE, cutoff, PageRequest.of(0, batchSize))
+                        : reservations.findExpirationCandidatesAfter(InventoryReservationStatus.ACTIVE, cutoff,
+                                afterExpiry, afterId, PageRequest.of(0, batchSize));
+                for (var candidate : candidates) {
+                    scanned++;
+                    try {
+                        if (expire.execute(candidate.getOrderId())) expired++;
+                        else skipped++;
+                    } catch (RuntimeException failure) {
+                        failed++;
+                        log.warn("Inventory reservation expiration failed sweepId={} orderId={} failureType={}",
+                                sweepId, candidate.getOrderId(), failure.getClass().getSimpleName());
+                    }
                 }
+                if (candidates.size() < batchSize) {
+                    completed = true;
+                    return;
+                }
+                var last = candidates.getLast();
+                afterExpiry = last.getExpiresAt();
+                afterId = last.getOrderId();
             }
-            if (candidates.size() < batchSize) return;
-            var last = candidates.getLast();
-            afterExpiry = last.getExpiresAt();
-            afterId = last.getOrderId();
+        } catch (RuntimeException failure) {
+            log.warn("Inventory expiration scan failed sweepId={} failureType={}",
+                    sweepId, failure.getClass().getSimpleName());
+            throw failure;
+        } finally {
+            log.info("Inventory expiration sweep sweepId={} candidates={} expired={} skipped={} failed={} completed={}",
+                    sweepId, scanned, expired, skipped, failed, completed);
         }
     }
 }

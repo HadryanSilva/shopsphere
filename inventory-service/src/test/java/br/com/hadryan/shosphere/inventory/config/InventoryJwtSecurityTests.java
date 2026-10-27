@@ -256,6 +256,26 @@ class InventoryJwtSecurityTests {
         return MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
 
+    @Test
+    void correlationWrapsSecurityRejectionsAndSuccessfulRequests() throws Exception {
+        runner().run(context -> {
+            var mvc = MockMvcBuilders.webAppContextSetup(context.getSourceApplicationContext())
+                    .addFilters(new RequestCorrelationFilter()).apply(springSecurity()).build();
+            var unauthenticated = mvc.perform(get(ITEM)).andExpect(status().isUnauthorized())
+                    .andExpect(header().exists("X-Request-ID")).andReturn();
+            var denied = mvc.perform(get(ITEM).header("Authorization", "Bearer "
+                            + token(List.of("CUSTOMER"), "shopsphere-web")))
+                    .andExpect(status().isForbidden()).andExpect(header().exists("X-Request-ID")).andReturn();
+            var allowed = mvc.perform(get(ITEM).header("Authorization", "Bearer "
+                            + token(List.of("ADMIN"), "shopsphere-web")))
+                    .andExpect(status().isNoContent()).andExpect(header().exists("X-Request-ID")).andReturn();
+            assertThat(unauthenticated.getResponse().getHeader("X-Request-ID"))
+                    .isNotEqualTo(denied.getResponse().getHeader("X-Request-ID"))
+                    .isNotEqualTo(allowed.getResponse().getHeader("X-Request-ID"));
+            assertThat(org.slf4j.MDC.get("requestId")).isNull();
+        });
+    }
+
     @TestConfiguration
     @EnableWebMvc
     @EnableWebSecurity

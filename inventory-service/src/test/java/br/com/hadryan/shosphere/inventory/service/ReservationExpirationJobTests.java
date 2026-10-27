@@ -12,6 +12,39 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ReservationExpirationJobTests {
+    @Test void reportsOutcomesWithoutExceptionMessagesAndPreservesScanFailure() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ReservationExpirationJob.class);
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            var repository = mock(InventoryReservationRepository.class);
+            var expire = mock(ExpireReservationUseCase.class);
+            var a = candidate(Instant.EPOCH, UUID.randomUUID());
+            var b = candidate(Instant.EPOCH, UUID.randomUUID());
+            var c = candidate(Instant.EPOCH, UUID.randomUUID());
+            when(repository.findExpirationCandidates(any(), any(), any())).thenReturn(List.of(a, b, c));
+            when(expire.execute(a.getOrderId())).thenReturn(true);
+            when(expire.execute(b.getOrderId())).thenReturn(false);
+            when(expire.execute(c.getOrderId())).thenThrow(new IllegalStateException("sensitive-error"));
+            var job = new ReservationExpirationJob(repository, expire, 50, "PT60S");
+            job.run();
+            assertTrue(logs.list.getLast().getFormattedMessage().contains(
+                    "candidates=3 expired=1 skipped=1 failed=1 completed=true"));
+            var failure = new IllegalStateException("sensitive-scan-error");
+            when(repository.findExpirationCandidates(any(), any(), any())).thenThrow(failure);
+            assertSame(failure, assertThrows(IllegalStateException.class, job::run));
+            assertTrue(logs.list.getLast().getFormattedMessage().contains("completed=false"));
+            for (var event : logs.list) {
+                assertFalse(event.getFormattedMessage().contains("sensitive"));
+                assertNull(event.getThrowableProxy());
+            }
+        } finally {
+            logger.detachAppender(logs);
+            logs.stop();
+        }
+    }
+
     @Test void pagesPastFailuresAndRestartsCursorEachSweep() {
         var repository = mock(InventoryReservationRepository.class);
         var expire = mock(ExpireReservationUseCase.class);
