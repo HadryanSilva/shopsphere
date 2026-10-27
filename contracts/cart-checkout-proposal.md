@@ -7,7 +7,9 @@ entrega documental 42. A persistência local da etapa 43 foi implementada depois
 conforme [CHECKOUT_PERSISTENCE.md](../cart-service/CHECKOUT_PERSISTENCE.md);
 O protocolo HTTP e a identidade da etapa 44 também foram implementados,
 conforme [CHECKOUT_API.md](../cart-service/CHECKOUT_API.md);
-as etapas 45–48 permanecem por implementar.
+A persistência da intenção e origem da etapa 45 foi implementada, conforme
+[CHECKOUT_PERSISTENCE.md do Order](../order-service/CHECKOUT_PERSISTENCE.md);
+as etapas 46–48 permanecem por implementar.
 
 ## Estado verificado
 
@@ -118,7 +120,7 @@ na entrega correspondente, sem alterar o Keycloak nesta microtarefa.
 | 42 | Fechar regras e contratos Cart–Order | Concluída: proposta integral aprovada em 2026-10-27, incluindo semântica de conclusão, bloqueio/409, 201 com conclusão pendente, identidade, payloads, erros e recuperação. Somente documentação. |
 | 43 | Persistir preparação e proteger mutações no Cart | Concluída: V3, snapshot/vínculo duráveis, transições idempotentes e verificações sob lock nas escritas; 100 testes aprovados com PostgreSQL, incluindo concorrência, upgrade, reinício e rollback. Sem endpoints ou integração Order. |
 | 44 | Expor protocolo interno e identidade de serviço | Concluída: quatro operações HTTP, JWT/role/azp/audiência, role provisionada e delimitada no Keycloak local; Cart com PostgreSQL e token real: 139 aprovados; Gateway: 86 aprovados. Segurança pública preservada, sem rota interna no Gateway ou integração Order. |
-| 45 | Persistir intenção e origem do pedido no Order | Nova migration incremental, sourceCartId único nullable para legados e intenção/endereço duráveis; rollback e concorrência testados, sem fabricar origem histórica. |
+| 45 | Persistir intenção e origem do pedido no Order | Concluída: V4, sourceCartId único nullable para legados, intenção/endereço/snapshot e agenda duráveis; commit conjunto com pedido, aborto serializado e replay. Suíte Order com PostgreSQL: 154 aprovados, incluindo upgrade, reinício, rollback e concorrência. Sem ativação do fluxo novo ou integração HTTP. |
 | 46 | Orquestrar snapshot e conclusão no Order | Usar protocolo aprovado, Catalog e transações curtas; manter POST/GET públicos; testes de timeout, duas chaves e replay após commit. Depende de 43–45. |
 | 47 | Recuperar conclusões e abortos pendentes | Reconciliador configurável com identidade de serviço, progresso durável, concorrência segura e logs sem dados sensíveis; recuperação após reinício e falhas em cada fronteira. |
 | 48 | Validar fluxo integrado e documentar operação | PostgreSQL, contratos entre serviços, segurança e falhas ambíguas; provar um pedido por carrinho e que pedidos antigos continuam consultáveis. Documentar intervenção e limites. |
@@ -343,7 +345,7 @@ Essa janela exige autorização operacional própria, não concedida pelo plano.
 Especificação documental aprovada integralmente pelo utilizador em 2026-10-27,
 incluindo criação posterior a 502/503, bloqueio sem TTL, role dedicada,
 contratos internos e estratégia de ativação com drenagem. Microtarefa 42
-concluída. As entregas 43 e 44 foram concluídas posteriormente; 45–48 permanecem por implementar.
+concluída. As entregas 43–45 foram concluídas posteriormente; 46–48 permanecem por implementar.
 A execução de uma janela operacional
 continua sujeita à autorização própria descrita acima.
 

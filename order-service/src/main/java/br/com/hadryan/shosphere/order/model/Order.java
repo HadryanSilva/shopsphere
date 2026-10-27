@@ -31,6 +31,19 @@ public class Order extends BaseEntity {
     @Column(name = "idempotency_key", length = 100)
     private String idempotencyKey;
 
+    @Setter(lombok.AccessLevel.NONE)
+    @Column(name = "source_cart_id", updatable = false)
+    private UUID sourceCartId;
+
+    public void assignSourceCart(UUID cartId) {
+        Objects.requireNonNull(cartId);
+        if (getId() != null && sourceCartId == null)
+            throw new IllegalStateException("Persisted order origin cannot be assigned retrospectively");
+        if (sourceCartId != null && !sourceCartId.equals(cartId))
+            throw new IllegalStateException("Order already belongs to another cart");
+        sourceCartId = cartId;
+    }
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private OrderStatus status = OrderStatus.PENDING_STOCK;

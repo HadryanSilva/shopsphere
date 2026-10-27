@@ -60,7 +60,16 @@ Suíte Cart com PostgreSQL e token real: 139 aprovados; Gateway: 86 aprovados,
 sem falhas ou ignorados. Rotas internas sem encaminhamento; segurança pública
 preservada, sem migration nova ou integração Order.
 Detalhes em [cart-service/CHECKOUT_API.md](cart-service/CHECKOUT_API.md).
-As microtarefas 45–48 permanecem por implementar.
+A microtarefa **45 — Persistir intenção e origem do pedido no Order** foi
+concluída: V4, intenção única por cliente/chave, endereço e snapshot duráveis,
+sourceCartId único e nullable para legados, e gravação atômica do pedido com
+COMPLETION_PENDING. Aborto serializado impede gravação tardia; agenda e falhas
+seguras ficam persistidas para a recuperação futura. Upgrade, reinício,
+rollback e concorrência validados com PostgreSQL: suíte completa do Order
+com 154 aprovados, sem falhas ou ignorados. V4 somente em schemas temporários;
+V1–V3 intactas, sem ativação do fluxo novo, endpoint ou integração HTTP.
+Detalhes em [order-service/CHECKOUT_PERSISTENCE.md](order-service/CHECKOUT_PERSISTENCE.md).
+As microtarefas 46–48 permanecem por implementar.
 
 Antes de considerar o fluxo pronto para compras reais, implementar o protocolo
 aprovado de snapshot/conclusão do carrinho: alterações concorrentes e novas chaves de

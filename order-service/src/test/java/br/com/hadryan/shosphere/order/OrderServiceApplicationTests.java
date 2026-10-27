@@ -38,6 +38,7 @@ class OrderServiceApplicationTests {
     @Autowired private MockMvc mvc;
 
     @MockitoBean private OrderRepository orderRepository;
+    @MockitoBean private br.com.hadryan.shosphere.order.service.impl.CheckoutIntentTransaction checkoutIntentTransaction;
     @MockitoBean private CartClient cartClient;
     @MockitoBean private CatalogClient catalogClient;
     @MockitoBean private JwtDecoder jwtDecoder;

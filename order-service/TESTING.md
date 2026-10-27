@@ -304,3 +304,47 @@ de PostgreSQL acima e execute:
 
 Sem PostgreSQL configurado, esse teste é ignorado. Os testes isolados de Flyway
 não iniciam JPA, Feign ou segurança JWT.
+
+## Intenção de checkout e origem do pedido — microtarefa 45
+
+Modelo, transações, arquivos e limites em
+[CHECKOUT_PERSISTENCE.md](CHECKOUT_PERSISTENCE.md).
+CheckoutIntentTests cobre invariantes, cópia do snapshot, endereço exato,
+transições terminais e metadados de retomada. CheckoutIntentPersistenceTests usa
+Flyway, JPA/Hibernate validate, transações reais e PostgreSQL em schemas temporários.
+
+Executados no módulo Order:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*OrderIdempotencyTests' --tests '*OrderServiceApplicationTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*CheckoutIntentTests' --tests '*CheckoutIntentPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --tests '*CheckoutIntentTests' --tests '*CheckoutIntentPersistenceTests' --tests '*OrderServiceApplicationTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+Os testes existentes focados passaram. A primeira compilação dos testes novos
+revelou ambiguidade de import entre Order de domínio e a anotação JUnit; os
+imports JUnit foram explicitados. A execução seguinte revelou precisão diferente
+de updatedAt na resposta inicial e no replay após reinício. A nova transação
+passou a reler o pedido gravado antes de construir a resposta; o fluxo público
+anterior não foi alterado. O conjunto focado ampliado passou após a correção.
+
+A suíte completa aprovou **154 testes**, zero falhas/erros e zero ignorados.
+São seis casos unitários e 17 testes PostgreSQL novos. Cobertura:
+
+- Upgrade V3 com pedido existente para V4, sem fabricar origem ou endereço;
+  criação antiga e múltiplas origens nulas continuam válidas.
+- Endereço/chave e snapshot preservados após reinício; null versus vazio
+  em addressLine2; isolamento por cliente e rejeição de snapshot substituto.
+- Criação concorrente da intenção por cliente/chave, endereços incompatíveis,
+  duas gravações para a mesma intenção e duas intenções para o mesmo carrinho.
+- Commit conjunto de pedido/itens/origem e COMPLETION_PENDING, replay de
+  snapshots financeiros e metadados, e rollback quando a atualização da intenção falha.
+- Aborto versus criação do pedido, chave consumida após aborto, resultado de
+  falha obsoleto sem regressão de estado, constraints e versão otimista.
+
+V4 foi exercitada apenas em schemas temporários de teste, removidos pelo
+procedimento de limpeza do teste. V1–V3 não foram modificadas. Não houve
+execução em banco compartilhado, mudança de segurança/contratos públicos,
+chamada ao protocolo interno do Cart, aquisição de token ou worker agendado.
