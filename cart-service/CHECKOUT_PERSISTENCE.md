@@ -4,6 +4,9 @@ Implementação do núcleo de persistência aprovado na
 [microtarefa 42](../contracts/cart-checkout-proposal.md). Ainda não há endpoints
 internos, provisionamento Keycloak ou chamadas Order → Cart para este protocolo.
 O checkout público existente do Order não usa esta preparação nesta entrega.
+Posteriormente, a etapa 44 expôs o protocolo HTTP e a identidade de serviço,
+descritos em [CHECKOUT_API.md](CHECKOUT_API.md); a descrição abaixo registra o
+escopo da entrega 43.
 
 ## Comportamento
 

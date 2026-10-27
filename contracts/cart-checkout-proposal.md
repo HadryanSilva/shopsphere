@@ -5,7 +5,9 @@ microtarefa 42 concluída. Os contratos e decisões abaixo orientam as entregas
 43–48. A aprovação do desenho não representa funcionalidade implementada na
 entrega documental 42. A persistência local da etapa 43 foi implementada depois,
 conforme [CHECKOUT_PERSISTENCE.md](../cart-service/CHECKOUT_PERSISTENCE.md);
-as etapas 44–48 permanecem por implementar.
+O protocolo HTTP e a identidade da etapa 44 também foram implementados,
+conforme [CHECKOUT_API.md](../cart-service/CHECKOUT_API.md);
+as etapas 45–48 permanecem por implementar.
 
 ## Estado verificado
 
@@ -115,7 +117,7 @@ na entrega correspondente, sem alterar o Keycloak nesta microtarefa.
 |---|---|---|
 | 42 | Fechar regras e contratos Cart–Order | Concluída: proposta integral aprovada em 2026-10-27, incluindo semântica de conclusão, bloqueio/409, 201 com conclusão pendente, identidade, payloads, erros e recuperação. Somente documentação. |
 | 43 | Persistir preparação e proteger mutações no Cart | Concluída: V3, snapshot/vínculo duráveis, transições idempotentes e verificações sob lock nas escritas; 100 testes aprovados com PostgreSQL, incluindo concorrência, upgrade, reinício e rollback. Sem endpoints ou integração Order. |
-| 44 | Expor protocolo interno e identidade de serviço | APIs aprovadas, validação JWT/role/azp e isolamento entre clientes; testes HTTP/401/403/replay, sem exposição pelo Gateway. |
+| 44 | Expor protocolo interno e identidade de serviço | Concluída: quatro operações HTTP, JWT/role/azp/audiência, role provisionada e delimitada no Keycloak local; Cart com PostgreSQL e token real: 139 aprovados; Gateway: 86 aprovados. Segurança pública preservada, sem rota interna no Gateway ou integração Order. |
 | 45 | Persistir intenção e origem do pedido no Order | Nova migration incremental, sourceCartId único nullable para legados e intenção/endereço duráveis; rollback e concorrência testados, sem fabricar origem histórica. |
 | 46 | Orquestrar snapshot e conclusão no Order | Usar protocolo aprovado, Catalog e transações curtas; manter POST/GET públicos; testes de timeout, duas chaves e replay após commit. Depende de 43–45. |
 | 47 | Recuperar conclusões e abortos pendentes | Reconciliador configurável com identidade de serviço, progresso durável, concorrência segura e logs sem dados sensíveis; recuperação após reinício e falhas em cada fronteira. |
@@ -341,7 +343,7 @@ Essa janela exige autorização operacional própria, não concedida pelo plano.
 Especificação documental aprovada integralmente pelo utilizador em 2026-10-27,
 incluindo criação posterior a 502/503, bloqueio sem TTL, role dedicada,
 contratos internos e estratégia de ativação com drenagem. Microtarefa 42
-concluída. A entrega 43 foi concluída posteriormente; 44–48 permanecem por implementar.
+concluída. As entregas 43 e 44 foram concluídas posteriormente; 45–48 permanecem por implementar.
 A execução de uma janela operacional
 continua sujeita à autorização própria descrita acima.
 

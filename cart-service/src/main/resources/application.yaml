@@ -1,3 +1,7 @@
+security:
+  checkout:
+    audience: ${SHOPSPHERE_CART_CHECKOUT_AUDIENCE:shopsphere-api}
+
 spring:
   application:
     name: cart-service

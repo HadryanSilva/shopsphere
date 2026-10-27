@@ -111,6 +111,18 @@ class GatewaySecurityTests {
                 .claim("realm_access", Map.of("roles", roles)).build();
     }
 
+    @ParameterizedTest
+    @CsvSource({"PUT,/internal/api/v1/cart-checkouts/123", "GET,/internal/api/v1/cart-checkouts/123",
+            "POST,/internal/api/v1/cart-checkouts/123/complete", "POST,/internal/api/v1/cart-checkouts/123/abort"})
+    void internalCartCheckoutsStayDeniedEvenForAdminAndServiceRole(String method, String path) throws Exception {
+        when(decoder.decode("checkout-token")).thenReturn(Jwt.withTokenValue("checkout-token")
+                .header("alg", "RS256").subject("service-account").claim("azp", "shopsphere-order")
+                .claim("aud", List.of("shopsphere-api"))
+                .claim("realm_access", Map.of("roles", List.of("ADMIN", "CART_CHECKOUT_SERVICE"))).build());
+        mvc.perform(request(HttpMethod.valueOf(method), path).header("Authorization", "Bearer checkout-token"))
+                .andExpect(status().isForbidden());
+    }
+
     @TestConfiguration
     @EnableWebMvc
     @EnableWebSecurity

@@ -52,7 +52,15 @@ validados com PostgreSQL. Suíte completa do Cart: 100 testes aprovados,
 sem falhas ou ignorados. V3 aplicada somente em schemas temporários de teste;
 V1/V2 preservadas. Sem endpoints internos, mudanças de segurança ou integração
 com Order. Detalhes em [cart-service/CHECKOUT_PERSISTENCE.md](cart-service/CHECKOUT_PERSISTENCE.md).
-As microtarefas 44–48 permanecem por implementar.
+A microtarefa **44 — Expor protocolo interno e identidade de serviço** foi
+concluída: PUT/GET de preparação/consulta e POSTs de conclusão/aborto, com
+JWT/role CART_CHECKOUT_SERVICE/azp shopsphere-order e audiência interna obrigatória.
+A role foi adicionada e delimitada no Keycloak local preservando INVENTORY_SERVICE.
+Suíte Cart com PostgreSQL e token real: 139 aprovados; Gateway: 86 aprovados,
+sem falhas ou ignorados. Rotas internas sem encaminhamento; segurança pública
+preservada, sem migration nova ou integração Order.
+Detalhes em [cart-service/CHECKOUT_API.md](cart-service/CHECKOUT_API.md).
+As microtarefas 45–48 permanecem por implementar.
 
 Antes de considerar o fluxo pronto para compras reais, implementar o protocolo
 aprovado de snapshot/conclusão do carrinho: alterações concorrentes e novas chaves de

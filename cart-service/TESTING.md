@@ -209,3 +209,55 @@ sem elevação falhou ao acessar a cache Gradle; execuções seguintes foram
 autorizadas. V3 foi aplicada somente em schemas temporários de teste, removidos
 pelo procedimento de limpeza existente. Nenhuma base compartilhada, configuração
 de Keycloak ou integração Order foi alterada. Não há endpoint interno nesta etapa.
+
+## Protocolo interno e identidade de serviço — microtarefa 44
+
+Contratos, segurança, arquivos e reprodução Keycloak em [CHECKOUT_API.md](CHECKOUT_API.md).
+CartCheckoutJwtSecurityTests utiliza controller e filtros reais, JWTs assinados,
+JWKS HTTP local e decoder real do Spring Boot, com CartCheckoutService simulado.
+Persistência, transições e isolamento do registro continuam cobertos pelos testes
+PostgreSQL reais da etapa 43. O teste de token Keycloak usa o endpoint GET interno
+com serviço simulado; não cria preparação num carrinho de uso normal.
+
+Executados no módulo Cart:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*CartAddProductHttpTests' --tests '*CartServiceApplicationTests'
+.\gradlew.bat test --offline --no-daemon --tests '*CartCheckoutJwtSecurityTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/cart_db'
+# SHOPSPHERE_TEST_CART_CHECKOUT_TOKEN fornecido apenas em memória pelo processo de validação.
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+Os testes focados passaram. O conjunto de JWT contabilizou 39 casos, com um
+teste opcional de token real ignorado na execução inicial. A suíte completa,
+com PostgreSQL e token Keycloak de client_credentials habilitados, aprovou
+**139 testes**, zero falhas/erros e zero ignorados. As variáveis temporárias
+de token e URL foram removidas ao terminar. As migrations existentes foram
+exercitadas apenas nos schemas temporários de teste.
+
+Validados: 201/Location versus 200 replay, consulta/conclusão/aborto, inclusão
+de nulls, body e UUID inválidos, 404/409 MVC, ausência de sessão e identidade
+derivada de azp sem confiar no sub/header. Matriz de role/azp, scopes e claims
+malformados, audiência ausente/incorreta, issuer incorreto, expiração, assinatura
+inválida e token malformado não concedem acesso. O teste público comprova que
+a exigência adicional de audiência e os novos handlers não se aplicam ao Cart
+público. Os demais testes HTTP públicos continuaram aprovados.
+
+No módulo Gateway:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*GatewayCartCheckoutIsolationTests' --tests '*GatewaySecurityTests'
+.\gradlew.bat test --offline --no-daemon
+```
+
+Conjunto focado e suíte completa aprovados; suíte completa: **86 testes**, zero
+falhas/erros e zero ignorados. Quatro casos verificam ausência de encaminhamento
+no predicado real e quatro verificam negação mesmo com ADMIN e role de serviço.
+
+O provisionamento local foi executado com sucesso. Uma tentativa de reexecução
+revelou detecção incorreta de role já existente na resposta de lista PowerShell;
+a consulta passou a usar diretamente a role pelo nome e a reexecução passou.
+Foram verificadas as atribuições e scopes anteriores e as claims não sensíveis
+do token emitido, incluindo preservação de INVENTORY_SERVICE e ausência de ADMIN.
+Não houve alteração de cliente web, segredo, mapper de audiência ou código Order.
