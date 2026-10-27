@@ -1,3 +1,12 @@
+checkout:
+  snapshot:
+    enabled: ${SHOPSPHERE_CHECKOUT_SNAPSHOT_ENABLED:false}
+    token-uri: ${SHOPSPHERE_ORDER_TOKEN_URI:}
+    client-id: shopsphere-order
+    client-secret: ${SHOPSPHERE_ORDER_CLIENT_SECRET:}
+    connect-timeout: 2000
+    read-timeout: 5000
+
 spring:
   application:
     name: order-service

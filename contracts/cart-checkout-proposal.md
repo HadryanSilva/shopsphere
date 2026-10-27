@@ -9,7 +9,9 @@ O protocolo HTTP e a identidade da etapa 44 também foram implementados,
 conforme [CHECKOUT_API.md](../cart-service/CHECKOUT_API.md);
 A persistência da intenção e origem da etapa 45 foi implementada, conforme
 [CHECKOUT_PERSISTENCE.md do Order](../order-service/CHECKOUT_PERSISTENCE.md);
-as etapas 46–48 permanecem por implementar.
+A orquestração da etapa 46 foi implementada com configuração temporária para
+desenvolvimento, conforme [CHECKOUT_ORCHESTRATION.md](../order-service/CHECKOUT_ORCHESTRATION.md);
+as etapas 47–48 permanecem por implementar.
 
 ## Estado verificado
 
@@ -28,6 +30,12 @@ as etapas 46–48 permanecem por implementar.
   versões, reconfirmadas na implementação; nenhuma migration existente muda.
 
 ## Resultado pretendido
+
+Atualização do utilizador em 2026-10-27: o sistema ainda está em desenvolvimento,
+sem operação em produção. As próximas entregas priorizam o fluxo final e os testes
+locais, sem acrescentar tratamento de dados legados ou procedimentos de rollout
+de produção. As referências históricas à compatibilidade descrevem decisões das
+entregas anteriores, não requisitos adicionais para as próximas etapas.
 
 Uma intenção de checkout usa um snapshot imutável de productId/quantity e
 produz no máximo um pedido por carrinho. Concorrência com edição tem resultado
@@ -121,14 +129,14 @@ na entrega correspondente, sem alterar o Keycloak nesta microtarefa.
 | 43 | Persistir preparação e proteger mutações no Cart | Concluída: V3, snapshot/vínculo duráveis, transições idempotentes e verificações sob lock nas escritas; 100 testes aprovados com PostgreSQL, incluindo concorrência, upgrade, reinício e rollback. Sem endpoints ou integração Order. |
 | 44 | Expor protocolo interno e identidade de serviço | Concluída: quatro operações HTTP, JWT/role/azp/audiência, role provisionada e delimitada no Keycloak local; Cart com PostgreSQL e token real: 139 aprovados; Gateway: 86 aprovados. Segurança pública preservada, sem rota interna no Gateway ou integração Order. |
 | 45 | Persistir intenção e origem do pedido no Order | Concluída: V4, sourceCartId único nullable para legados, intenção/endereço/snapshot e agenda duráveis; commit conjunto com pedido, aborto serializado e replay. Suíte Order com PostgreSQL: 154 aprovados, incluindo upgrade, reinício, rollback e concorrência. Sem ativação do fluxo novo ou integração HTTP. |
-| 46 | Orquestrar snapshot e conclusão no Order | Usar protocolo aprovado, Catalog e transações curtas; manter POST/GET públicos; testes de timeout, duas chaves e replay após commit. Depende de 43–45. |
+| 46 | Orquestrar snapshot e conclusão no Order | Concluída: protocolo interno com client_credentials, Catalog fora de transações, conclusão/aborto duráveis e replay; contrato público preservado. Suíte Order com PostgreSQL: 196 aprovados, incluindo timeout, duas chaves e resposta perdida após commit. Modo novo disponível por configuração temporária de desenvolvimento. |
 | 47 | Recuperar conclusões e abortos pendentes | Reconciliador configurável com identidade de serviço, progresso durável, concorrência segura e logs sem dados sensíveis; recuperação após reinício e falhas em cada fronteira. |
 | 48 | Validar fluxo integrado e documentar operação | PostgreSQL, contratos entre serviços, segurança e falhas ambíguas; provar um pedido por carrinho e que pedidos antigos continuam consultáveis. Documentar intervenção e limites. |
 
 Cada entrega inclui testes focados; não deixar os testes de recuperação apenas
-para a última etapa. As etapas intermediárias não habilitam o fluxo novo em
-produção antes de existir recuperação. Confirmar estratégia de ativação conjunta
-ou configuração temporária no fecho do contrato.
+para a última etapa. Durante o desenvolvimento, usar a configuração temporária
+para validar o fluxo novo por etapas; as etapas 47–48 completam recuperação
+automática e testes integrados locais, sem exigir procedimentos de produção.
 
 ## Decisões aprovadas
 
@@ -319,13 +327,12 @@ Pedidos legados sem sourceCartId não permitem provar que seu carrinho atual
 já foi usado. A garantia de um pedido por carrinho vale para o novo protocolo;
 não fabricar histórico nem inferir origem por igualdade de itens.
 
-Recomenda-se ativação conjunta com pausa breve de POST de pedidos e mutações
-de carrinho, drenagem de requisições antigas, migrations incrementais e arranque
-dos componentes completos, incluindo reconciliador, antes de reabrir tráfego.
-Não coexistir checkout antigo e novo aceitando escrita: o antigo ignora bloqueios.
-Não voltar à versão antiga enquanto houver preparações pendentes; rollback
-operacional requer pausa e resolução das intenções pela versão compatível.
-Essa janela exige autorização operacional própria, não concedida pelo plano.
+O sistema está em desenvolvimento: não se exige janela de manutenção, drenagem
+ou rollout de produção. A configuração temporária da etapa 46 permite testar o
+novo fluxo durante a implementação incremental. Testar uma configuração de
+checkout por execução, usando schemas de teste isolados. As etapas 47–48 completam
+a recuperação automática e a validação integrada; não introduzir compatibilidade
+adicional com dados legados como requisito dessas entregas.
 
 ### Critérios de aceitação a transportar para 43–48
 
@@ -345,9 +352,9 @@ Essa janela exige autorização operacional própria, não concedida pelo plano.
 Especificação documental aprovada integralmente pelo utilizador em 2026-10-27,
 incluindo criação posterior a 502/503, bloqueio sem TTL, role dedicada,
 contratos internos e estratégia de ativação com drenagem. Microtarefa 42
-concluída. As entregas 43–45 foram concluídas posteriormente; 46–48 permanecem por implementar.
-A execução de uma janela operacional
-continua sujeita à autorização própria descrita acima.
+concluída. As entregas 43–46 foram concluídas posteriormente; 47–48 permanecem por implementar.
+A orientação posterior do utilizador substitui o planejamento de janela
+operacional por desenvolvimento e validação local, conforme registrado acima.
 
 Validação desta revisão: leitura das implementações de idempotência e mutação,
 contratos de erros e migrations existentes; nenhum teste de aplicação executado,

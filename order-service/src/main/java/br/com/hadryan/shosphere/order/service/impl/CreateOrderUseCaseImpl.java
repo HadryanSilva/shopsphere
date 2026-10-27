@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Service
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "checkout.snapshot.enabled", havingValue = "false", matchIfMissing = true)
 public class CreateOrderUseCaseImpl implements CreateOrderUseCase {
 
     private final CurrentUserTokenProvider currentUserTokenProvider;

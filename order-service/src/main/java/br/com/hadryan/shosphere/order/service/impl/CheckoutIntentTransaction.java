@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -41,6 +42,10 @@ public class CheckoutIntentTransaction {
     public CheckoutIntentSnapshot get(UUID id) {
         // Preparation adds the snapshot in a later transaction: read state and items under the same root lock.
         return CheckoutIntentSnapshot.from(lock(id));
+    }
+
+    public Optional<CheckoutIntentSnapshot> find(UUID customerId, UUID key) {
+        return intents.findWithLockByCustomerIdAndIdempotencyKey(customerId, key.toString()).map(CheckoutIntentSnapshot::from);
     }
 
     public CheckoutIntentSnapshot prepared(UUID id, UUID cartId, List<CheckoutIntentItem> items) {

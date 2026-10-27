@@ -69,7 +69,20 @@ rollback e concorrência validados com PostgreSQL: suíte completa do Order
 com 154 aprovados, sem falhas ou ignorados. V4 somente em schemas temporários;
 V1–V3 intactas, sem ativação do fluxo novo, endpoint ou integração HTTP.
 Detalhes em [order-service/CHECKOUT_PERSISTENCE.md](order-service/CHECKOUT_PERSISTENCE.md).
-As microtarefas 46–48 permanecem por implementar.
+A microtarefa **46 — Orquestrar snapshot e conclusão no Order** foi concluída:
+novo caso de uso, cliente interno e client_credentials, com preparação,
+revalidação Catalog, commit local, conclusão/aborto e retomada por replay.
+Falha de conclusão após commit mantém pedido e pendência; nenhuma chamada HTTP
+mantém transação aberta. Suíte completa Order com PostgreSQL: 196 aprovados,
+sem falhas ou ignorados. Sem migration nova, alteração de contrato público ou
+ativação no ambiente normal. Configuração temporária permite testar o modo novo.
+Detalhes em [order-service/CHECKOUT_ORCHESTRATION.md](order-service/CHECKOUT_ORCHESTRATION.md).
+As microtarefas 47–48 permanecem por implementar.
+
+Orientação do utilizador em 2026-10-27: o sistema está em desenvolvimento e
+ainda não opera em produção. As próximas etapas não exigem tratamento adicional
+de dados legados, janelas de manutenção, drenagem ou rollout de produção;
+priorizar recuperação automática e validação integrada local do fluxo final.
 
 Antes de considerar o fluxo pronto para compras reais, implementar o protocolo
 aprovado de snapshot/conclusão do carrinho: alterações concorrentes e novas chaves de

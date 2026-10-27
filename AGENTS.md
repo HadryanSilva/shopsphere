@@ -2,6 +2,13 @@
 
 > **Aplicação:** instruções para qualquer agente que leia ou modifique este repositório. Leia também `SHOPSPHERE_CODEX_CONTEXT.md`. Estas instruções não autorizam mudanças por si só: a tarefa explícita do utilizador define o escopo.
 
+## Estado atual do projeto
+
+- ShopSphere está em desenvolvimento e ainda não opera em produção, conforme esclarecido pelo utilizador em 2026-10-27.
+- Planeje as próximas entregas para o ambiente de desenvolvimento e o comportamento final pretendido. Não acrescente tratamento de registros legados, backfills de produção, janelas de manutenção, drenagem de tráfego ou estratégias de rollout apenas por hipótese.
+- Só planeje essas medidas se o utilizador indicar uma necessidade concreta ou se o ambiente efetivamente inspecionado a demonstrar.
+- Esta orientação não autoriza apagar dados/testes, sobrescrever trabalho existente ou editar migrations já aplicadas; continuam valendo as regras específicas abaixo.
+
 ## 1. Princípio fundamental: alterações mínimas e justificadas
 
 - Execute **somente** a tarefa explicitamente solicitada. Prefira o menor diff que resolva o problema.

@@ -348,3 +348,53 @@ V4 foi exercitada apenas em schemas temporários de teste, removidos pelo
 procedimento de limpeza do teste. V1–V3 não foram modificadas. Não houve
 execução em banco compartilhado, mudança de segurança/contratos públicos,
 chamada ao protocolo interno do Cart, aquisição de token ou worker agendado.
+
+## Orquestração por snapshot — microtarefa 46
+
+Comportamento, configuração temporária de desenvolvimento, arquivos e limites em
+[CHECKOUT_ORCHESTRATION.md](CHECKOUT_ORCHESTRATION.md).
+
+Executados no módulo Order:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*OrderServiceApplicationTests' --tests '*CheckoutIntentTests'
+.\gradlew.bat test --offline --no-daemon --tests '*CartCheckoutClientTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*SnapshotCheckoutPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --tests '*SnapshotCheckoutPersistenceTests' --tests '*CartCheckoutClientTests' --tests '*CheckoutModeTests'
+.\gradlew.bat test --offline --no-daemon --tests '*CheckoutModeTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+Os testes existentes e os testes dos clientes passaram. A primeira execução da
+orquestração revelou uma substituição de stub Mockito que executava a resposta
+anterior com argumentos nulos; foi corrigida usando doThrow/doAnswer. No conjunto
+ampliado, o teste de seleção de modo tentou injetar persistência num mock criado
+como bean comum; passou a registrar esse mock como singleton pré-construído.
+Nenhuma validação de produção ou expectativa funcional foi removida.
+
+Repetição dos testes de modo aprovada. A suíte completa com PostgreSQL aprovou
+**196 testes**, zero falhas/erros e zero ignorados: 28 casos novos de orquestração
+com banco, 12 de cliente HTTP e dois de seleção de modo. Modo novo habilitado
+somente nos contextos de teste pertinentes; o padrão da aplicação continua false.
+
+Cobertura inclui:
+
+- POST 201/Location, replay, GET por proprietário e 404 de outro cliente; itens
+  do body ignorados em favor do snapshot; valores revalidados no Catalog.
+- client_credentials, cache/renovação/invalidação de token, métodos/payloads
+  internos, timeouts 2000/5000 ms, timeout de leitura real com servidor HTTP local,
+  erros sanitizados e ausência de retry na aplicação.
+- Preparação perdida, falha após preparação remota e antes do commit local,
+  timeout do Catalog com snapshot preservado, conclusão perdida e retomada após
+  reinício sem JWT do utilizador. As chamadas simuladas verificam ausência de
+  transação e que o pedido já está commitado antes de complete.
+- Aborto registrado antes de HTTP, aborto pendente retomado no replay,
+  payloads inválidos preservando trabalho recuperável e valores monetários rejeitados.
+- Concorrência na mesma chave e duas chaves para o mesmo carrinho; um pedido
+  por origem mesmo quando o Cart simulado permite ambas as preparações.
+
+PostgreSQL/Flyway/JPA usam apenas schemas temporários. Não foram exercitadas
+chamadas ao Keycloak ou aos processos reais de Cart/Catalog nesta etapa;
+o transporte é testado com servidores HTTP locais e os colaboradores externos
+da orquestração são simulados. A etapa 48 cobre a integração entre serviços.
