@@ -170,3 +170,42 @@ aprovados, sem falhas ou ignorados. Também passaram os 7 testes de contrato
 batch do Catalog e os 2 testes do cliente Catalog do Order, executados com
 `--tests '*ProductBatchContractTests'` e `--tests '*CatalogClientContractTests'`
 nos respetivos módulos.
+
+## Preparação local do checkout — microtarefa 43
+
+Modelo, arquivos e limites em [CHECKOUT_PERSISTENCE.md](CHECKOUT_PERSISTENCE.md).
+Novos testes: CartCheckoutTests e CartCheckoutPersistenceTests, além de um
+cenário HTTP com os componentes reais de escrita em CartServiceApplicationTests.
+Os contextos sem datasource também simulam CartCheckoutRepository; os testes
+PostgreSQL continuam usando os repositórios reais.
+
+Executados no módulo Cart:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*CartItemOwnershipTests' --tests '*AddCartItemTransactionTests' --tests '*CartServiceApplicationTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/cart_db'
+.\gradlew.bat test --offline --no-daemon --tests '*CartCheckoutTests' --tests '*CartCheckoutPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+Os testes existentes focados passaram. A primeira execução dos testes novos
+revelou diferença de precisão de timestamps após persistência e obtenção de
+bean pela classe concreta em vez da interface transacional. As causas foram
+corrigidas: timestamps de checkout usam microssegundos e o teste usa a interface.
+A repetição focada aprovou 22 testes; após acrescentar cobertura HTTP e snapshot
+com 101 itens, a suíte completa aprovou **100 testes**, zero falhas/erros e zero
+ignorados. São 14 testes PostgreSQL novos e nove casos unitários de checkout.
+
+Validados: upgrade de V2 com dados, Hibernate validate, reinício, snapshot
+imutável, replay/timestamps, isolamento de cliente de serviço, quatro caminhos
+de escrita bloqueados, duas intenções para o mesmo carrinho, mesma intenção
+concorrente, edição versus preparação, aborto versus preparação/conclusão,
+aborto antecipado e criação de novo ACTIVE após conclusão. Constraints SQL e
+falha de conclusão verificam atomicidade e rollback sem perder a preparação.
+
+PostgreSQL estava inicialmente indisponível; tornou-se acessível após aviso ao
+utilizador e foi utilizado na execução final. A tentativa inicial do wrapper
+sem elevação falhou ao acessar a cache Gradle; execuções seguintes foram
+autorizadas. V3 foi aplicada somente em schemas temporários de teste, removidos
+pelo procedimento de limpeza existente. Nenhuma base compartilhada, configuração
+de Keycloak ou integração Order foi alterada. Não há endpoint interno nesta etapa.

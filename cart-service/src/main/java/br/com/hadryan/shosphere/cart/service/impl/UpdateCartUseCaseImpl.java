@@ -24,6 +24,9 @@ public class UpdateCartUseCaseImpl implements UpdateCartUseCase {
     public void execute(UUID customerId, UUID productId, UpdateCartRequest request) {
         var cart = cartRepository.findByCustomerIdAndStatus(customerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
+        if (cartRepository.isCheckoutPrepared(cart.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cart checkout is in progress");
+        }
         if (cart.getItems().stream().noneMatch(item -> item.getProductId().equals(productId))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart item not found");
         }

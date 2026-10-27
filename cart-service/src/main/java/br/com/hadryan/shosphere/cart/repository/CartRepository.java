@@ -17,6 +17,14 @@ import java.util.UUID;
 @Repository
 public interface CartRepository extends JpaRepository<Cart, UUID> {
 
+    // Call only after locking the cart root when deciding whether to mutate it.
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM {h-schema}cart_checkouts WHERE cart_id = :cartId AND status = 'PREPARED')",
+            nativeQuery = true)
+    boolean isCheckoutPrepared(@Param("cartId") UUID cartId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Cart> findWithLockById(UUID id);
+
     @EntityGraph(attributePaths = "items")
     Optional<Cart> findByCustomerIdAndStatus(UUID customerId, CartStatus status);
 

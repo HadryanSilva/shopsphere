@@ -29,6 +29,9 @@ public class AddCartItemTransaction {
                 : cartRepository.findWithLockByIdAndCustomerIdAndStatus(request.cartId(), customerId, CartStatus.ACTIVE))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
+        if (cartRepository.isCheckoutPrepared(cart.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cart checkout is in progress");
+        }
         try {
             cart.addItem(request.productId(), request.quantity());
         } catch (ArithmeticException exception) {

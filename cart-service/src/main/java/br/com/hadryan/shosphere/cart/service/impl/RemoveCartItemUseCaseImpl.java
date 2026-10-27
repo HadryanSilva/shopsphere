@@ -23,6 +23,9 @@ public class RemoveCartItemUseCaseImpl implements RemoveCartItemUseCase {
         var cart = cartRepository.findWithLockByCustomerIdAndStatus(customerId, CartStatus.ACTIVE)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
+        if (cartRepository.isCheckoutPrepared(cart.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cart checkout is in progress");
+        }
         cart.removeItem(productId);
         cartRepository.saveAndFlush(cart);
     }

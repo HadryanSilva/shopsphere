@@ -33,6 +33,7 @@ class CatalogClientContractTests {
     @Autowired private CatalogClient catalog;
     @MockitoBean private Client transport;
     @MockitoBean private CartRepository carts;
+    @MockitoBean private br.com.hadryan.shosphere.cart.repository.CartCheckoutRepository checkouts;
     @MockitoBean private CartItemRepository items;
     @MockitoBean private JwtDecoder jwtDecoder;
 

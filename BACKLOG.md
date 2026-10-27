@@ -41,9 +41,18 @@ A microtarefa **42 — Fechar regras e contratos Cart–Order** foi concluída:
 proposta integral aprovada pelo utilizador em 2026-10-27, com contratos HTTP,
 payloads, estados, segurança, recuperação e critérios de aceitação.
 O desenho aprovado define snapshot persistido, bloqueio de mutações, vínculo
-único carrinho/pedido e recuperação durável de conclusão/aborto. As microtarefas
-43–48 permanecem por implementar; nenhuma API, regra de segurança ou migration
-foi alterada nesta entrega documental.
+único carrinho/pedido e recuperação durável de conclusão/aborto. Nenhuma API,
+regra de segurança ou migration foi alterada na entrega documental 42.
+
+A microtarefa **43 — Persistir preparação e proteger mutações no Cart** foi
+concluída: V3 acrescenta preparação/snapshot, transições locais idempotentes e
+aborto antecipado; as escritas verificam o bloqueio sob lock da raiz.
+Upgrade V2, reinício, replay, concorrência, constraints e rollback foram
+validados com PostgreSQL. Suíte completa do Cart: 100 testes aprovados,
+sem falhas ou ignorados. V3 aplicada somente em schemas temporários de teste;
+V1/V2 preservadas. Sem endpoints internos, mudanças de segurança ou integração
+com Order. Detalhes em [cart-service/CHECKOUT_PERSISTENCE.md](cart-service/CHECKOUT_PERSISTENCE.md).
+As microtarefas 44–48 permanecem por implementar.
 
 Antes de considerar o fluxo pronto para compras reais, implementar o protocolo
 aprovado de snapshot/conclusão do carrinho: alterações concorrentes e novas chaves de

@@ -37,6 +37,36 @@ class CartServiceApplicationTests {
     @Autowired private MockMvc mvc;
 
     @Test
+    void preparedCartReturnsConflictForPostPatchAndDeleteWithoutChangingItems() throws Exception {
+        var customerId = UUID.randomUUID();
+        var productId = UUID.randomUUID();
+        var cartId = UUID.randomUUID();
+        var cart = mock(Cart.class, CALLS_REAL_METHODS);
+        when(cart.getId()).thenReturn(cartId);
+        cart.setItems(new java.util.ArrayList<>(List.of(new CartItem(cart, productId, 2))));
+        when(cartRepository.findByCustomerIdAndStatus(customerId, CartStatus.ACTIVE)).thenReturn(Optional.of(cart));
+        when(cartRepository.findWithLockByCustomerIdAndStatus(customerId, CartStatus.ACTIVE)).thenReturn(Optional.of(cart));
+        when(cartRepository.isCheckoutPrepared(cartId)).thenReturn(true);
+        when(catalogClient.getProductById(productId)).thenReturn(
+                new ProductResponse(productId, "Product", BigDecimal.TEN, "ACTIVE"));
+        var requests = List.of(
+                post("/api/v1/carts/me/items").content("{\"productId\":\"" + productId + "\",\"quantity\":1}"),
+                patch("/api/v1/carts/me/items/" + productId).content("{\"quantity\":9}"),
+                patch("/api/v1/carts/me/items/" + UUID.randomUUID()).content("{\"quantity\":9}"),
+                delete("/api/v1/carts/me/items/" + productId),
+                delete("/api/v1/carts/me/items/" + UUID.randomUUID()));
+        for (var request : requests) {
+            mvc.perform(request.with(jwt().jwt(token -> token.subject(customerId.toString())))
+                            .contentType("application/json"))
+                    .andExpect(status().isConflict())
+                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                    .andExpect(jsonPath("$.detail").value("Cart checkout is in progress"));
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(2, cart.getItems().getFirst().getQuantity());
+        verify(cartRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void accumulatedQuantityOverflowReturnsConflictWithoutChangingOrSavingItem() throws Exception {
         var customerId = UUID.randomUUID();
         var productId = UUID.randomUUID();
@@ -146,6 +176,7 @@ class CartServiceApplicationTests {
     }
 
     @MockitoBean private CartRepository cartRepository;
+    @MockitoBean private br.com.hadryan.shosphere.cart.repository.CartCheckoutRepository cartCheckoutRepository;
     @MockitoBean private CartItemRepository cartItemRepository;
     @MockitoBean private CatalogClient catalogClient;
     @MockitoBean private JwtDecoder jwtDecoder;
