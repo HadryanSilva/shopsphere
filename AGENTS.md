@@ -45,9 +45,17 @@ Não execute sem autorização específica do utilizador:
 - Atualizar Spring Boot, Spring Cloud, Java, Gradle, plugins ou dependências sem necessidade demonstrada e aprovação para mudanças de versão.
 - Adicionar serviços, bancos, brokers, infraestrutura, módulos ou dependências novas quando uma solução local atende à tarefa.
 - Executar comandos destrutivos ou irreversíveis, como `git reset --hard`, `git clean -fd`, `git push --force`, exclusão de recursos em cloud ou alterações em ambientes compartilhados.
-- Fazer deploy, publicar artefatos, abrir PRs, criar commits ou enviar alterações remotas, salvo quando explicitamente solicitado.
+- Fazer deploy, publicar artefatos, abrir PRs ou enviar alterações remotas, salvo quando explicitamente solicitado. Commits locais de conclusão de microtarefas seguem a autorização permanente abaixo.
 
 Se a tarefa explicitamente requer uma dessas ações, limite-se exatamente ao que foi autorizado. Se surgir uma ação destrutiva adicional não prevista, solicite confirmação.
+
+### Commit obrigatório ao concluir microtarefas
+
+- Por autorização permanente do utilizador, realize sempre um commit local após concluir cada microtarefa, inclusive documental, sem solicitar nova confirmação.
+- Antes do commit, revise o diff e execute as validações pertinentes; declare eventuais limitações e não marque uma microtarefa incompleta como concluída.
+- Inclua somente as alterações da microtarefa. Preserve alterações alheias, inclusive as já staged, e não use staging indiscriminado.
+- Use uma mensagem que descreva a entrega e informe o hash do commit na resposta final. Se o commit falhar, informe a falha sem afirmar que foi criado.
+- Esta autorização não inclui push, publicação, deploy ou outras ações remotas.
 
 ## 5. Preservação do trabalho existente
 
