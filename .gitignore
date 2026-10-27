@@ -3,6 +3,7 @@
 .vscode/
 .codex/
 .aws/
+shopsphere-web/
 *.iml
 *.iws
 *.ipr

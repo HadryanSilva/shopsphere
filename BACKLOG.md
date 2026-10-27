@@ -35,12 +35,22 @@ está concluída; permanece a definição do protocolo de checkout descrita adia
 
 ## Pendência maior de checkout
 
-Antes de considerar o fluxo pronto para compras reais, definir um protocolo de
-snapshot/conclusão do carrinho: alterações concorrentes e novas chaves de
+Planejamento iniciado em 2026-10-27: proposta e microtarefas **42–48** em
+[contracts/cart-checkout-proposal.md](contracts/cart-checkout-proposal.md).
+A microtarefa **42 — Fechar regras e contratos Cart–Order** foi concluída:
+proposta integral aprovada pelo utilizador em 2026-10-27, com contratos HTTP,
+payloads, estados, segurança, recuperação e critérios de aceitação.
+O desenho aprovado define snapshot persistido, bloqueio de mutações, vínculo
+único carrinho/pedido e recuperação durável de conclusão/aborto. As microtarefas
+43–48 permanecem por implementar; nenhuma API, regra de segurança ou migration
+foi alterada nesta entrega documental.
+
+Antes de considerar o fluxo pronto para compras reais, implementar o protocolo
+aprovado de snapshot/conclusão do carrinho: alterações concorrentes e novas chaves de
 idempotência ainda podem gerar pedidos com o mesmo carrinho ativo. A prioridade
-é alta para essa etapa do produto, mas exige desenho e aprovação dos contratos
-entre Cart e Order; não deve ser introduzido como correção lateral nas tarefas
-acima. Dividir em microtarefas após essa definição, sem acrescentar Inventory,
+é alta para essa etapa do produto; o desenho e os contratos entre Cart e Order
+estão aprovados na microtarefa 42. A implementação segue as microtarefas 43–48,
+sem ser introduzida como correção lateral nas tarefas acima ou acrescentar Inventory,
 Payment, Saga ou Outbox automaticamente.
 
 ## Validação PostgreSQL
