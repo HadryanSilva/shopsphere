@@ -111,6 +111,25 @@ snapshot, selecionado explicitamente no arranque; o modo anterior continua sendo
 o default. Conclusão do Cart não representa estoque reservado nem pagamento.
 Inventory, Payment, Saga e Outbox continuam fora desta fase.
 
+## Próxima entrega — contrato Order–Inventory
+
+Microtarefa **49 — Definir e aprovar contrato Order–Inventory** iniciada por
+solicitação do utilizador. Rascunho em
+[contracts/order-inventory-proposal.md](contracts/order-inventory-proposal.md),
+**pendente de revisão/aprovação**, sem mudança de código, schema ou segurança.
+
+A proposta recomenda HTTP interno com a identidade existente, reserva após
+pedido persistido e Cart concluído, acompanhamento de prazo e compensação
+durável. Explicita duas decisões necessárias: checkout com até 100 produtos
+e novo aborto interno que impede PUT atrasado mesmo sem reserva existente.
+PENDING_PAYMENT/CANCELLED seriam usados por reserva/rejeição/expiração; consumo
+definitivo e Payment ficam fora da entrega. As regras ainda não estão aprovadas.
+
+O documento propõe as microtarefas 50–55 para persistência/aborto no Inventory,
+trabalho durável e integração no Order, worker e validação integrada. Numeração
+e escopo devem ser confirmados após aprovação; nenhuma implementação autorizada
+automaticamente por esta lista. A microtarefa 49 não está concluída.
+
 ## Validação PostgreSQL
 
 Reexecutar migrations, persistência e concorrência com PostgreSQL local

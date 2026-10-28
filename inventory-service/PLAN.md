@@ -194,9 +194,15 @@ para preencher a tabela.
 
 ## Etapa posterior: ligação ao checkout
 
+Definição iniciada na microtarefa 49, em
+[contrato Order–Inventory](../contracts/order-inventory-proposal.md), ainda
+**rascunho pendente de aprovação**. A conclusão do Cart já foi implementada
+nas microtarefas 42–48. O novo documento propõe a ordem pedido/Cart/reserva,
+limite de checkout, aborto durável e entregas 50–55, sem alterar o Inventory.
+
 Antes de alterar Order/Cart, definir transporte e identidade entre serviços,
 ordem de persistência/reserva, timeouts, respostas ambíguas e compensação após
-falha. Reavaliar também o protocolo pendente de conclusão do carrinho.
+falha, preservando o protocolo já implementado de conclusão do carrinho.
 Não manter transação de banco aberta durante HTTP nem usar transação entre
 bancos. Se forem escolhidos eventos, planejar explicitamente broker, Outbox,
 deduplicação, contratos e recuperação; não prometer entrega exatamente uma vez.
