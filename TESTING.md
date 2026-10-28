@@ -53,3 +53,11 @@ Remove-Item Env:SHOPSPHERE_TEST_POSTGRES_URL -ErrorAction SilentlyContinue
 
 Não use esse perfil para executar a aplicação fora dos testes. Ele não testa
 conectividade com dependências externas nem substitui a integração com PostgreSQL.
+
+## Fluxo Cart–Order–Catalog pelo Gateway
+
+A suíte opt-in CheckoutFlowIntegrationTests inicia os quatro JARs reais,
+usa PostgreSQL em schemas exclusivos e valida HTTP, segurança JWT e
+recuperação com reinícios/falhas de rede. Pré-requisitos, comandos e limites
+em [order-service/CHECKOUT_OPERATION.md](order-service/CHECKOUT_OPERATION.md).
+Ela usa emissor/JWKS local de teste e não exige nem modifica Keycloak.

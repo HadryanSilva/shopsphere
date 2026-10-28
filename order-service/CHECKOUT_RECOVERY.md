@@ -72,5 +72,6 @@ a usar a intenção original e o protocolo aprovado.
 
 Não houve migration nova, dependência, mudança de API pública ou segurança,
 alteração no Cart/Gateway/Inventory, integração Payment ou mensageria. A
-validação entre processos reais e a operação integrada ficam para a etapa 48.
+validação entre processos reais e a operação integrada foram acrescentadas na
+etapa 48, conforme [CHECKOUT_OPERATION.md](CHECKOUT_OPERATION.md).
 Testes e resultados em [TESTING.md](TESTING.md).

@@ -11,7 +11,10 @@ A persistência da intenção e origem da etapa 45 foi implementada, conforme
 [CHECKOUT_PERSISTENCE.md do Order](../order-service/CHECKOUT_PERSISTENCE.md);
 A orquestração da etapa 46 foi implementada com configuração temporária para
 desenvolvimento, conforme [CHECKOUT_ORCHESTRATION.md](../order-service/CHECKOUT_ORCHESTRATION.md);
-as etapas 47–48 permanecem por implementar.
+A recuperação automática da etapa 47 está descrita em
+[CHECKOUT_RECOVERY.md](../order-service/CHECKOUT_RECOVERY.md), e a validação
+integrada/operação da etapa 48 em
+[CHECKOUT_OPERATION.md](../order-service/CHECKOUT_OPERATION.md).
 
 ## Estado verificado
 
@@ -131,7 +134,7 @@ na entrega correspondente, sem alterar o Keycloak nesta microtarefa.
 | 45 | Persistir intenção e origem do pedido no Order | Concluída: V4, sourceCartId único nullable para legados, intenção/endereço/snapshot e agenda duráveis; commit conjunto com pedido, aborto serializado e replay. Suíte Order com PostgreSQL: 154 aprovados, incluindo upgrade, reinício, rollback e concorrência. Sem ativação do fluxo novo ou integração HTTP. |
 | 46 | Orquestrar snapshot e conclusão no Order | Concluída: protocolo interno com client_credentials, Catalog fora de transações, conclusão/aborto duráveis e replay; contrato público preservado. Suíte Order com PostgreSQL: 196 aprovados, incluindo timeout, duas chaves e resposta perdida após commit. Modo novo disponível por configuração temporária de desenvolvimento. |
 | 47 | Recuperar conclusões e abortos pendentes | Concluída: job configurável com identidade de serviço existente, seleção/claim SKIP LOCKED e agenda durável, backoff exponencial e avisos seguros. Reinício nas quatro fases, concorrência e isolamento de falhas validados com PostgreSQL; suíte Order com 210 aprovados, sem falhas ou ignorados. Sem migration nova ou ativação normal do modo snapshot. |
-| 48 | Validar fluxo integrado e documentar operação | PostgreSQL, contratos entre serviços, segurança e falhas ambíguas; provar um pedido por carrinho e que pedidos antigos continuam consultáveis. Documentar intervenção e limites. |
+| 48 | Validar fluxo integrado e documentar operação | Concluída: 13 cenários entre os JARs reais de quatro serviços, PostgreSQL isolado, JWT RSA de teste, concorrência, respostas perdidas, reinícios, recuperação e consulta histórica. Open EntityManager in View desativado no Order para reler estado entre transações. Suíte completa Order: 223 aprovados; operação e limites documentados. Sem migration/dependência nova ou ativação normal do modo snapshot; Keycloak real/PKCE fora desta suíte. |
 
 Cada entrega inclui testes focados; não deixar os testes de recuperação apenas
 para a última etapa. Durante o desenvolvimento, usar a configuração temporária
@@ -352,7 +355,8 @@ adicional com dados legados como requisito dessas entregas.
 Especificação documental aprovada integralmente pelo utilizador em 2026-10-27,
 incluindo criação posterior a 502/503, bloqueio sem TTL, role dedicada,
 contratos internos e estratégia de ativação com drenagem. Microtarefa 42
-concluída. As entregas 43–47 foram concluídas posteriormente; 48 permanece por implementar.
+concluída. As entregas 43–48 foram concluídas posteriormente, incluindo validação
+integrada local e documentação operacional; o modo snapshot exige seleção explícita.
 A orientação posterior do utilizador substitui o planejamento de janela
 operacional por desenvolvimento e validação local, conforme registrado acima.
 

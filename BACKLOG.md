@@ -33,7 +33,7 @@ está concluída; permanece a definição do protocolo de checkout descrita adia
 | 5 | 27 — Reduzir chamadas ao Catalog na leitura do carrinho | P2 | Concluída: batch único, sem chamada para carrinho vazio, timeouts 2000/5000 ms e sem retry; preservados payload e erros 404/502/503. Contratos e persistência aprovados. |
 | 6 | 28 — Corrigir Location da categoria criada | P3 | Concluída: Location aponta para /api/v1/categories/{id}; teste verifica o ID no header e segue o endereço com GET. |
 
-## Pendência maior de checkout
+## Protocolo de checkout Cart–Order
 
 Planejamento iniciado em 2026-10-27: proposta e microtarefas **42–48** em
 [contracts/cart-checkout-proposal.md](contracts/cart-checkout-proposal.md).
@@ -85,20 +85,31 @@ recuperação após falha de banco validados com PostgreSQL. Suíte completa Ord
 210 aprovados, sem falhas ou ignorados. Sem nova migration ou ativação do modo
 snapshot no ambiente normal. Detalhes em
 [order-service/CHECKOUT_RECOVERY.md](order-service/CHECKOUT_RECOVERY.md).
-A microtarefa 48 permanece por implementar.
+A microtarefa **48 — Validar fluxo integrado e documentar operação** foi
+concluída: suíte opt-in inicia os JARs reais de Catalog, Cart, Order e Gateway,
+com PostgreSQL isolado e identidade RSA de teste. Treze cenários integrados
+validam concorrência, respostas perdidas, reinícios, recuperação automática,
+segurança e consulta histórica. A integração revelou entidades desatualizadas
+entre transações com Open EntityManager in View no Order; a opção foi desativada,
+preservando os contratos e a construção dos DTOs nas transações existentes.
+Suíte completa Order: 223 aprovados, sem falhas ou ignorados. Testes focados:
+Cart 61 aprovados e um token Keycloak real ignorado; Catalog sete e Gateway 27
+aprovados, sem falhas. Sem migration/dependência nova ou ativação normal do modo
+snapshot. Operação e limites em
+[order-service/CHECKOUT_OPERATION.md](order-service/CHECKOUT_OPERATION.md).
+As microtarefas 42–48 estão concluídas; Keycloak real/PKCE não fizeram parte
+da suíte integrada desta entrega.
 
 Orientação do utilizador em 2026-10-27: o sistema está em desenvolvimento e
 ainda não opera em produção. As próximas etapas não exigem tratamento adicional
 de dados legados, janelas de manutenção, drenagem ou rollout de produção;
 priorizar recuperação automática e validação integrada local do fluxo final.
 
-Antes de considerar o fluxo pronto para compras reais, implementar o protocolo
-aprovado de snapshot/conclusão do carrinho: alterações concorrentes e novas chaves de
-idempotência ainda podem gerar pedidos com o mesmo carrinho ativo. A prioridade
-é alta para essa etapa do produto; o desenho e os contratos entre Cart e Order
-estão aprovados na microtarefa 42. A implementação segue as microtarefas 43–48,
-sem ser introduzida como correção lateral nas tarefas acima ou acrescentar Inventory,
-Payment, Saga ou Outbox automaticamente.
+O protocolo aprovado de snapshot/conclusão está implementado e validado localmente
+nas microtarefas 43–48. A garantia de um pedido por carrinho aplica-se ao modo
+snapshot, selecionado explicitamente no arranque; o modo anterior continua sendo
+o default. Conclusão do Cart não representa estoque reservado nem pagamento.
+Inventory, Payment, Saga e Outbox continuam fora desta fase.
 
 ## Validação PostgreSQL
 

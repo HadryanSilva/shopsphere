@@ -117,4 +117,5 @@ criptográfica continua coberta pela suíte existente de JWT do Order.
 
 Não houve nova migration, alteração de DTO público, segurança, Gateway, Inventory,
 Payment, Outbox ou mensageria. Nenhum secret foi obtido ou alterado no Keycloak
-nesta entrega. A validação entre processos Cart/Order/Catalog fica para a etapa 48.
+nesta entrega. A validação entre processos Cart/Order/Catalog foi acrescentada
+na etapa 48, conforme [CHECKOUT_OPERATION.md](CHECKOUT_OPERATION.md).

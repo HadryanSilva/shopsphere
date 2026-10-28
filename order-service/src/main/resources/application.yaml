@@ -16,6 +16,8 @@ checkout:
       warn-after: PT15M
 
 spring:
+  jpa:
+    open-in-view: false
   application:
     name: order-service
   cloud:

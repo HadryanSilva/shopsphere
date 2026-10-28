@@ -442,3 +442,52 @@ simulados nesta validação; transporte e token continuam cobertos pelos testes
 de cliente existentes, sem chamar Keycloak real ou processos Cart/Catalog.
 A etapa 48 valida o fluxo integrado. Não houve migration nova ou ativação do
 modo snapshot no ambiente normal.
+
+## Fluxo entre processos — microtarefa 48
+
+Suíte opt-in CheckoutFlowIntegrationTests e infraestrutura de teste
+CheckoutTestRuntime, sob src/test/java/br/com/hadryan/shosphere/order/integration.
+Procedimento reproduzível, operação, correção encontrada e limites em
+[CHECKOUT_OPERATION.md](CHECKOUT_OPERATION.md).
+
+Foram gerados os quatro JARs com `.\gradlew.bat bootJar --offline --no-daemon`
+nos módulos Catalog, Cart, Order e Gateway. Com PostgreSQL local e
+SHOPSPHERE_TEST_CHECKOUT_INTEGRATION=true, foram executados no Order:
+
+```powershell
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+$env:SHOPSPHERE_TEST_CHECKOUT_INTEGRATION = 'true'
+.\gradlew.bat test --offline --no-daemon --tests '*CheckoutFlowIntegrationTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+A primeira execução integrada teve três falhas: o proxy atrasava também o 409
+legítimo da preparação concorrente; Open EntityManager in View no Order causava
+conflitos com estado desatualizado ao registrar aborto e disputar a mesma chave.
+O proxy passou a bloquear somente respostas de preparação bem-sucedidas e o
+Order passou a configurar spring.jpa.open-in-view=false. Os mesmos 11 casos
+passaram na repetição, sem relaxar os contratos de aborto ou idempotência.
+Foram acrescentados depois os cenários de resposta pública perdida e aborto
+antes de preparação, incluídos na execução completa.
+
+A execução completa com PostgreSQL e integração ativada aprovou **223 testes**,
+zero falhas/erros e zero ignorados, incluindo **13 cenários integrados**. Os
+quatro serviços iniciaram com seus JARs reais; o worker agendado retomou as
+intenções sem replay público nos casos de restauração/reinício. A única mudança
+posterior no código de teste foi esclarecer um comentário, sem efeito funcional.
+
+Validação complementar executada:
+
+- Catalog: `.\gradlew.bat test --offline --no-daemon --tests '*ProductBatchContractTests'`;
+  sete testes aprovados.
+- Gateway: `.\gradlew.bat test --offline --no-daemon --tests '*GatewayCartCheckoutIsolationTests' --tests '*GatewaySecurityTests'`;
+  27 testes aprovados.
+- Cart, com SHOPSPHERE_TEST_POSTGRES_URL apontando para cart_db:
+  `.\gradlew.bat test --offline --no-daemon --tests '*CartCheckoutTests' --tests '*CartCheckoutPersistenceTests' --tests '*CartCheckoutJwtSecurityTests'`;
+  61 testes aprovados e um opcional de token real do Keycloak ignorado, sem falhas.
+
+Os testes integrados exercitam processos, HTTP, persistência, filtros/decoders
+JWT, aquisição de token e agendamento reais. O emissor/JWKS/token endpoint e os
+proxies de falhas pertencem ao harness. Não houve consulta/provisionamento do
+Keycloak real ou login do frontend. Sem novas migrations/dependências e sem
+ativação do modo snapshot no ambiente normal.
