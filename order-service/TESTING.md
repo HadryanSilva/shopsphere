@@ -398,3 +398,47 @@ PostgreSQL/Flyway/JPA usam apenas schemas temporários. Não foram exercitadas
 chamadas ao Keycloak ou aos processos reais de Cart/Catalog nesta etapa;
 o transporte é testado com servidores HTTP locais e os colaboradores externos
 da orquestração são simulados. A etapa 48 cobre a integração entre serviços.
+
+## Recuperação automática — microtarefa 47
+
+Configuração, coordenação e operação em [CHECKOUT_RECOVERY.md](CHECKOUT_RECOVERY.md).
+Foram acrescentados CheckoutRecoveryJobTests, testes de ativação em
+CheckoutModeTests e nove casos PostgreSQL em SnapshotCheckoutPersistenceTests.
+
+Comandos executados no módulo Order:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*CheckoutRecoveryJobTests' --tests '*CheckoutModeTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*SnapshotCheckoutPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --tests '*SnapshotCheckoutPersistenceTests' --tests '*CheckoutRecoveryJobTests' --tests '*CheckoutModeTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+A primeira execução com banco revelou ausência de conversão String/Duration
+nos contextos Spring simples dos testes. A leitura dos parâmetros passou a
+usar Duration.parse explicitamente, sem alterar a infraestrutura dos testes.
+Os testes focados passaram após a correção. A suíte completa com PostgreSQL
+aprovou **210 testes**, zero falhas/erros e zero ignorados, incluindo os dois
+casos de bloqueio/falha local acrescentados após a execução focada.
+Uma tentativa de execução também
+foi impedida pelo sandbox ao acessar o cache Gradle; foi repetida com permissão.
+
+Cobertura acrescentada:
+
+- Reinício em PREPARING, PREPARED, COMPLETION_PENDING e ABORT_PENDING; job
+  completa/aborta sem JWT do utilizador e não seleciona estados terminais.
+- Claim concorrente único, agenda do claim preservada após reinício e nova
+  elegibilidade após o prazo; SKIP LOCKED na seleção e claim sob lock real.
+- Lotes limitados, falha de uma intenção permitindo progresso das seguintes,
+  agendas futuras ignoradas, backoff exponencial/teto e contador sem duplicação.
+- Falha no banco após preparação remota registra backoff; restauração permite
+  retomar o mesmo checkoutId e persistir um único pedido.
+- Erros de seleção/claim/bookkeeping isolados, avisos após 15 minutos sem
+  expor texto de exceção/stack trace e seleção condicional do job.
+
+PostgreSQL/Flyway/JPA usam schemas temporários. Cart/Catalog permanecem
+simulados nesta validação; transporte e token continuam cobertos pelos testes
+de cliente existentes, sem chamar Keycloak real ou processos Cart/Catalog.
+A etapa 48 valida o fluxo integrado. Não houve migration nova ou ativação do
+modo snapshot no ambiente normal.

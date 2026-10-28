@@ -10,6 +10,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import java.time.Duration;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -26,6 +28,63 @@ public class CheckoutIntentTransaction {
     private final OrderRepository orders;
     @PersistenceContext
     private EntityManager entityManager;
+    @Value("#{T(java.time.Duration).parse('${checkout.snapshot.recovery.initial-backoff:PT60S}')}")
+    private Duration initialBackoff = Duration.ofSeconds(60);
+    @Value("#{T(java.time.Duration).parse('${checkout.snapshot.recovery.max-backoff:PT15M}')}")
+    private Duration maxBackoff = Duration.ofMinutes(15);
+
+    @jakarta.annotation.PostConstruct
+    void validateBackoff() {
+        if (initialBackoff.isNegative() || initialBackoff.isZero() || maxBackoff.compareTo(initialBackoff) < 0)
+            throw new IllegalArgumentException("Invalid checkout recovery backoff");
+    }
+
+    public List<UUID> due(Instant now, int limit) {
+        return entityManager.createQuery("select i.checkoutId from CheckoutIntent i where i.nextAttemptAt <= :now "
+                + "and i.status in :pending order by i.nextAttemptAt, i.checkoutId", UUID.class)
+                .setParameter("now", now).setParameter("pending", List.of(CheckoutIntentStatus.PREPARING,
+                        CheckoutIntentStatus.PREPARED, CheckoutIntentStatus.COMPLETION_PENDING, CheckoutIntentStatus.ABORT_PENDING))
+                .setLockMode(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+                .setHint("jakarta.persistence.lock.timeout", -2)
+                .setMaxResults(limit).getResultList();
+    }
+
+    public Optional<CheckoutIntentSnapshot> claim(UUID id, Instant now, Duration lease) {
+        var matches = entityManager.createQuery("select i from CheckoutIntent i where i.checkoutId = :id "
+                        + "and i.nextAttemptAt <= :now", CheckoutIntent.class)
+                .setParameter("id", id).setParameter("now", now)
+                .setLockMode(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+                .setHint("jakarta.persistence.lock.timeout", -2).getResultList();
+        if (matches.isEmpty()) return Optional.empty();
+        var intent = matches.getFirst();
+        intent.scheduleAttempt(now.plus(lease));
+        intents.flush();
+        return Optional.of(CheckoutIntentSnapshot.from(intent));
+    }
+
+    public CheckoutIntentSnapshot retry(UUID id, CheckoutIntentStatus expected, CheckoutRetryCategory category) {
+        var intent = lock(id);
+        if (intent.getStatus() == expected && intent.getNextAttemptAt() != null) retry(intent, category);
+        intents.flush();
+        return CheckoutIntentSnapshot.from(intent);
+    }
+
+    // Fallback for failures before the orchestrator could persist its own retry metadata.
+    public CheckoutIntentSnapshot recoveryFailed(UUID id, long previousAttempts) {
+        var intent = lock(id);
+        if (intent.getNextAttemptAt() != null && intent.getAttemptCount() == previousAttempts)
+            retry(intent, CheckoutRetryCategory.PERSISTENCE_FAILURE);
+        intents.flush();
+        return CheckoutIntentSnapshot.from(intent);
+    }
+
+    private void retry(CheckoutIntent intent, CheckoutRetryCategory category) {
+        var delay = initialBackoff;
+        for (long n = 0; n < intent.getAttemptCount() && delay.compareTo(maxBackoff) < 0; n++) {
+            delay = delay.compareTo(maxBackoff.dividedBy(2)) > 0 ? maxBackoff : delay.multipliedBy(2);
+        }
+        intent.recordFailure(category, Instant.now().plus(delay));
+    }
 
     public CheckoutIntentSnapshot start(UUID customerId, UUID key, ShippingAddress address) {
         var existing = intents.findWithLockByCustomerIdAndIdempotencyKey(customerId, key.toString());

@@ -13,7 +13,8 @@ import static org.mockito.Mockito.mock;
 
 class CheckoutModeTests {
     private ApplicationContextRunner runner() {
-        return new ApplicationContextRunner().withUserConfiguration(CreateOrderUseCaseImpl.class, SnapshotCheckoutUseCase.class)
+        return new ApplicationContextRunner().withUserConfiguration(CreateOrderUseCaseImpl.class, SnapshotCheckoutUseCase.class, CheckoutRecoveryJob.class)
+                .withPropertyValues("checkout.snapshot.recovery.enabled=true")
                 .withBean(CurrentUserTokenProvider.class, () -> mock(CurrentUserTokenProvider.class))
                 .withBean(CartClient.class, () -> mock(CartClient.class))
                 .withBean(CatalogClient.class, () -> mock(CatalogClient.class))
@@ -29,6 +30,7 @@ class CheckoutModeTests {
         runner().run(context -> {
             assertThat(context).hasSingleBean(CreateOrderUseCase.class);
             assertThat(context.getBean(CreateOrderUseCase.class)).isInstanceOf(CreateOrderUseCaseImpl.class);
+            assertThat(context).doesNotHaveBean(CheckoutRecoveryJob.class);
         });
     }
     @Test
@@ -36,6 +38,15 @@ class CheckoutModeTests {
         runner().withPropertyValues("checkout.snapshot.enabled=true").run(context -> {
             assertThat(context).hasSingleBean(CreateOrderUseCase.class);
             assertThat(context.getBean(CreateOrderUseCase.class)).isInstanceOf(SnapshotCheckoutUseCase.class);
+            assertThat(context).hasSingleBean(CheckoutRecoveryJob.class);
+        });
+    }
+
+    @Test
+    void recoveryCanBeStoppedWithoutChangingCheckoutMode() {
+        runner().withPropertyValues("checkout.snapshot.enabled=true", "checkout.snapshot.recovery.enabled=false").run(context -> {
+            assertThat(context).hasSingleBean(SnapshotCheckoutUseCase.class);
+            assertThat(context).doesNotHaveBean(CheckoutRecoveryJob.class);
         });
     }
 }

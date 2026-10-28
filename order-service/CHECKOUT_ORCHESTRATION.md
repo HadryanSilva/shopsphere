@@ -94,9 +94,10 @@ a preparação perdida é retomada por PUT equivalente na próxima execução.
 - Resultados concorrentes revalidam o estado local. A decisão de aborto não
   pode reverter um commit já concluído; nesse caso prevalece o pedido salvo.
 
-A primeira agenda de falha usa 60 segundos. O job, backoff progressivo, lotes
-e observabilidade da recuperação pertencem à etapa 47. Até essa etapa, retomada
-ocorre por replay da mesma chave ou chamada Java a resume, sem worker automático.
+A primeira agenda de falha usa 60 segundos. A etapa 47 acrescentou job,
+backoff progressivo, lotes e logs seguros, descritos em
+[CHECKOUT_RECOVERY.md](CHECKOUT_RECOVERY.md). Replay e worker usam a mesma
+operação resume e as mesmas fronteiras transacionais.
 
 ## Arquivos e validação
 

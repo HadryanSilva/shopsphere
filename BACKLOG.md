@@ -77,7 +77,15 @@ mantém transação aberta. Suíte completa Order com PostgreSQL: 196 aprovados,
 sem falhas ou ignorados. Sem migration nova, alteração de contrato público ou
 ativação no ambiente normal. Configuração temporária permite testar o modo novo.
 Detalhes em [order-service/CHECKOUT_ORCHESTRATION.md](order-service/CHECKOUT_ORCHESTRATION.md).
-As microtarefas 47–48 permanecem por implementar.
+A microtarefa **47 — Recuperar conclusões e abortos pendentes** foi concluída:
+job configurável retoma as quatro fases não terminais, sem JWT do utilizador,
+com seleção/claim SKIP LOCKED, agenda durável, backoff exponencial até 15 minutos
+e logs seguros. Reinício, disputa entre workers, isolamento de falhas e
+recuperação após falha de banco validados com PostgreSQL. Suíte completa Order:
+210 aprovados, sem falhas ou ignorados. Sem nova migration ou ativação do modo
+snapshot no ambiente normal. Detalhes em
+[order-service/CHECKOUT_RECOVERY.md](order-service/CHECKOUT_RECOVERY.md).
+A microtarefa 48 permanece por implementar.
 
 Orientação do utilizador em 2026-10-27: o sistema está em desenvolvimento e
 ainda não opera em produção. As próximas etapas não exigem tratamento adicional

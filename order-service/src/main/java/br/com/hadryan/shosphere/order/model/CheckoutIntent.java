@@ -135,6 +135,12 @@ public class CheckoutIntent {
         updatedAt = now();
     }
 
+    public void scheduleAttempt(Instant nextAttemptAt) {
+        if (status == CheckoutIntentStatus.COMPLETED || status == CheckoutIntentStatus.ABORTED)
+            throw new IllegalStateException("Checkout is terminal");
+        this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt).truncatedTo(ChronoUnit.MICROS);
+    }
+
     public static Map<UUID, Integer> quantities(List<CheckoutIntentItem> snapshot) {
         Objects.requireNonNull(snapshot);
         Map<UUID, Integer> quantities = new HashMap<>();

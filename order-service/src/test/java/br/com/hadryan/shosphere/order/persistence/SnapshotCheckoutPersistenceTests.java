@@ -412,6 +412,136 @@ class SnapshotCheckoutPersistenceTests {
         } catch (Exception failure) { throw new IllegalStateException(failure); }
     }
 
+    private CheckoutRecoveryJob recovery(int batch) {
+        return new CheckoutRecoveryJob(tx(), checkout(), batch, java.time.Duration.ofSeconds(60), java.time.Duration.ofMinutes(15));
+    }
+
+    @Test
+    void lockedIntentDoesNotBlockSelectionOrClaimOfOtherWork() throws Exception {
+        var first = tx().start(customer, key, new ShippingAddress("Customer", "Street", null, "Lisbon", "1000-001", "PT"));
+        var second = tx().start(UUID.randomUUID(), UUID.randomUUID(), new ShippingAddress("Other", "Street", null, "Lisbon", "1000-001", "PT"));
+        try (var connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.prepareStatement("SELECT checkout_id FROM " + schema + ".checkout_intents WHERE checkout_id = ? FOR UPDATE")) {
+                statement.setObject(1, first.checkoutId());
+                try (var result = statement.executeQuery()) { assertTrue(result.next()); }
+                try (var executor = Executors.newSingleThreadExecutor()) {
+                    executor.submit(() -> {
+                        assertEquals(List.of(second.checkoutId()), tx().due(Instant.now(), 1));
+                        assertTrue(tx().claim(first.checkoutId(), Instant.now(), java.time.Duration.ofSeconds(60)).isEmpty());
+                        assertTrue(tx().claim(second.checkoutId(), Instant.now(), java.time.Duration.ofSeconds(60)).isPresent());
+                    }).get(5, TimeUnit.SECONDS);
+                }
+            } finally { connection.rollback(); }
+        }
+    }
+
+    @Test
+    void workerPersistsBackoffAfterDatabaseFailureAndLaterResumesSameRemotePreparation() throws Exception {
+        var pending = tx().start(customer, key, new ShippingAddress("Customer", "Street", null, "Lisbon", "1000-001", "PT"));
+        try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE " + schema + ".checkout_intents ADD CONSTRAINT test_recovery_failure CHECK (status <> 'PREPARED')");
+        }
+        recovery(50).runOnce();
+        assertEquals(CheckoutIntentStatus.PREPARING, intent().status());
+        assertEquals(1, intent().attemptCount());
+        assertEquals(CheckoutRetryCategory.PERSISTENCE_FAILURE, intent().lastFailureCategory());
+        assertTrue(tx().due(Instant.now(), 50).isEmpty());
+        try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE " + schema + ".checkout_intents DROP CONSTRAINT test_recovery_failure");
+        }
+        makeDue(pending.checkoutId());
+        recovery(50).runOnce();
+        assertEquals(CheckoutIntentStatus.COMPLETED, intent().status());
+        assertEquals(1, count("orders"));
+        verify(cart, times(2)).prepare(pending.checkoutId(), customer);
+    }
+
+    private void makeDue(UUID id) {
+        new org.springframework.jdbc.core.JdbcTemplate(dataSource).update("UPDATE " + schema
+                + ".checkout_intents SET next_attempt_at = now() - interval '1 second' WHERE checkout_id = ?", id);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"prepare", "catalog", "complete", "abort"})
+    void workerRecoversEachDurableBoundaryAfterRestartWithoutUserJwt(String boundary) {
+        var failure = new CheckoutIntegrationFailure(503, CheckoutRetryCategory.UPSTREAM_UNAVAILABLE);
+        switch (boundary) {
+            case "prepare" -> doThrow(failure).when(cart).prepare(any(), any());
+            case "catalog" -> doThrow(new feign.RetryableException(503, "unavailable", feign.Request.HttpMethod.GET,
+                    (Long) null, feign.Request.create(feign.Request.HttpMethod.GET, "http://catalog", Map.of(), null,
+                            java.nio.charset.StandardCharsets.UTF_8, null))).when(catalog).getProducts(anyList());
+            case "complete" -> doThrow(failure).when(cart).complete(any(), any());
+            case "abort" -> {
+                when(catalog.getProducts(anyList())).thenReturn(List.of());
+                doThrow(failure).when(cart).abort(any(), any());
+            }
+        }
+        try { execute(); } catch (ResponseStatusException expected) { }
+        var id = intent().checkoutId();
+        context.close();
+        openContext();
+        doAnswer(call -> remote(call.getArgument(0), "PREPARED", null)).when(cart).prepare(any(), any());
+        doAnswer(call -> remote(call.getArgument(0), "COMPLETED", call.getArgument(1))).when(cart).complete(any(), any());
+        doAnswer(call -> remote(call.getArgument(0), "ABORTED", null)).when(cart).abort(any(), any());
+        doReturn(List.of(new ProductResponse(product, "Recovered", new BigDecimal("12.50"), "EUR", "ACTIVE")))
+                .when(catalog).getProducts(anyList());
+        makeDue(id);
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        recovery(50).runOnce();
+        assertEquals("abort".equals(boundary) ? CheckoutIntentStatus.ABORTED : CheckoutIntentStatus.COMPLETED, intent().status());
+        assertEquals("abort".equals(boundary) ? 0 : 1, count("orders"));
+        assertNull(intent().nextAttemptAt());
+        assertTrue(tx().due(Instant.now().plusSeconds(10000), 50).isEmpty());
+    }
+
+    @Test
+    void concurrentWorkersClaimOnlyOnceAndCrashLeaseSurvivesRestart() throws Exception {
+        var pending = tx().start(customer, key, new ShippingAddress("Customer", "Street", null, "Lisbon", "1000-001", "PT"));
+        var now = Instant.now();
+        var results = race(() -> tx().claim(pending.checkoutId(), now, java.time.Duration.ofSeconds(60)),
+                () -> tx().claim(pending.checkoutId(), now, java.time.Duration.ofSeconds(60)));
+        assertEquals(1, results.stream().map(result -> (java.util.Optional<?>) result).filter(java.util.Optional::isPresent).count());
+        context.close();
+        openContext();
+        assertTrue(tx().due(now.plusSeconds(30), 50).isEmpty());
+        assertEquals(List.of(pending.checkoutId()), tx().due(now.plusSeconds(61), 50));
+        makeDue(pending.checkoutId());
+        recovery(50).runOnce();
+        assertEquals(CheckoutIntentStatus.COMPLETED, intent().status());
+    }
+
+    @Test
+    void backoffDoublesCapsAndIgnoresObsoleteOrAlreadyRecordedFailures() {
+        var pending = tx().start(customer, key, new ShippingAddress("Customer", "Street", null, "Lisbon", "1000-001", "PT"));
+        for (int seconds : new int[]{60, 120, 240, 480, 900, 900}) {
+            var before = Instant.now();
+            var failed = tx().retry(pending.checkoutId(), CheckoutIntentStatus.PREPARING, CheckoutRetryCategory.UPSTREAM_UNAVAILABLE);
+            assertTrue(failed.nextAttemptAt().isAfter(before.plusSeconds(seconds - 1)));
+            assertTrue(failed.nextAttemptAt().isBefore(Instant.now().plusSeconds(seconds + 1)));
+        }
+        assertEquals(6, tx().recoveryFailed(pending.checkoutId(), 5).attemptCount());
+        assertEquals(6, tx().retry(pending.checkoutId(), CheckoutIntentStatus.PREPARED, CheckoutRetryCategory.PERSISTENCE_FAILURE).attemptCount());
+        var next = tx().recoveryFailed(pending.checkoutId(), 6);
+        assertEquals(7, next.attemptCount());
+        assertEquals(CheckoutRetryCategory.PERSISTENCE_FAILURE, next.lastFailureCategory());
+    }
+
+    @Test
+    void failingFirstIntentDoesNotStarveLaterBatchesAndFutureRetriesAreSkipped() {
+        var first = tx().start(customer, key, new ShippingAddress("Customer", "Street", null, "Lisbon", "1000-001", "PT"));
+        var second = tx().start(UUID.randomUUID(), UUID.randomUUID(), new ShippingAddress("Other", "Street", null, "Lisbon", "1000-001", "PT"));
+        doThrow(new CheckoutIntegrationFailure(503, CheckoutRetryCategory.UPSTREAM_UNAVAILABLE)).when(cart).prepare(any(), any());
+        assertEquals(1, tx().due(Instant.now(), 1).size());
+        recovery(1).runOnce();
+        recovery(1).runOnce();
+        assertEquals(1, tx().get(first.checkoutId()).attemptCount());
+        assertEquals(1, tx().get(second.checkoutId()).attemptCount());
+        assertTrue(tx().due(Instant.now(), 50).isEmpty());
+        verify(cart, times(2)).prepare(any(), any());
+        assertEquals(0, count("orders"));
+    }
+
     @TestConfiguration
     @EnableTransactionManagement
     @EnableJpaRepositories(basePackageClasses = OrderRepository.class)

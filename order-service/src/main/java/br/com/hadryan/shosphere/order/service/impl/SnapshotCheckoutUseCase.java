@@ -24,7 +24,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import java.time.Instant;
 import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -65,7 +64,7 @@ public class SnapshotCheckoutUseCase implements CreateOrderUseCase {
         return resume(intent.checkoutId());
     }
 
-    // The future reconciler can resume persisted work without a user JWT.
+    // Resume persisted work without a user JWT, including recovery after a restart.
     public OrderResponse resume(UUID checkoutId) {
         var intent = transaction.get(checkoutId);
         if (intent.orderId() != null) {
@@ -210,7 +209,7 @@ public class SnapshotCheckoutUseCase implements CreateOrderUseCase {
     }
 
     private void recordFailure(CheckoutIntentSnapshot intent, CheckoutRetryCategory category) {
-        try { transaction.recordFailure(intent.checkoutId(), intent.status(), category, Instant.now().plusSeconds(60)); }
+        try { transaction.retry(intent.checkoutId(), intent.status(), category); }
         catch (DataAccessException | ResponseStatusException failure) { /* Preserve the existing durable state if bookkeeping is unavailable. */ }
     }
 
