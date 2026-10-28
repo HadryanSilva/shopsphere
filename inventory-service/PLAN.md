@@ -194,9 +194,9 @@ para preencher a tabela.
 
 ## Etapa posterior: ligação ao checkout
 
-Definição iniciada na microtarefa 49, em
-[contrato Order–Inventory](../contracts/order-inventory-proposal.md), ainda
-**rascunho pendente de aprovação**. A conclusão do Cart já foi implementada
+Definição concluída na microtarefa 49, em
+[contrato Order–Inventory](../contracts/order-inventory-proposal.md), com
+**aprovação explícita do utilizador**. A conclusão do Cart já foi implementada
 nas microtarefas 42–48. O novo documento propõe a ordem pedido/Cart/reserva,
 limite de checkout, aborto durável e entregas 50–55, sem alterar o Inventory.
 

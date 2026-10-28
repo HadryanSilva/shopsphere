@@ -113,22 +113,22 @@ Inventory, Payment, Saga e Outbox continuam fora desta fase.
 
 ## Próxima entrega — contrato Order–Inventory
 
-Microtarefa **49 — Definir e aprovar contrato Order–Inventory** iniciada por
-solicitação do utilizador. Rascunho em
+Microtarefa **49 — Definir e aprovar contrato Order–Inventory** concluída com
+aprovação explícita do utilizador. Contrato aprovado em
 [contracts/order-inventory-proposal.md](contracts/order-inventory-proposal.md),
-**pendente de revisão/aprovação**, sem mudança de código, schema ou segurança.
+sem mudança de código, schema ou segurança no registro da aprovação.
 
 A proposta recomenda HTTP interno com a identidade existente, reserva após
 pedido persistido e Cart concluído, acompanhamento de prazo e compensação
 durável. Explicita duas decisões necessárias: checkout com até 100 produtos
 e novo aborto interno que impede PUT atrasado mesmo sem reserva existente.
 PENDING_PAYMENT/CANCELLED seriam usados por reserva/rejeição/expiração; consumo
-definitivo e Payment ficam fora da entrega. As regras ainda não estão aprovadas.
+definitivo e Payment ficam fora da entrega. As sete decisões foram aprovadas.
 
 O documento propõe as microtarefas 50–55 para persistência/aborto no Inventory,
 trabalho durável e integração no Order, worker e validação integrada. Numeração
-e escopo devem ser confirmados após aprovação; nenhuma implementação autorizada
-automaticamente por esta lista. A microtarefa 49 não está concluída.
+e escopo devem ser reconfirmados no início de cada entrega, executando uma por
+vez. A próxima é a 50, de persistência e aborto no Inventory, sem endpoint novo.
 
 ## Validação PostgreSQL
 

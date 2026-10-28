@@ -1,11 +1,10 @@
 # Order–Inventory — proposta da próxima entrega (microtarefa 49)
 
-**Estado: rascunho para revisão e aprovação do utilizador.**
-A definição foi solicitada após a conclusão das microtarefas 42–48.
-As recomendações abaixo não estão aprovadas nem implementadas. Esta entrega
-altera somente documentação; não autoriza alterar APIs, segurança, schema ou
-ativar a integração. Aprovar explicitamente as decisões ao final antes de
-iniciar as microtarefas de implementação propostas.
+**Estado: proposta integral aprovada explicitamente pelo utilizador; microtarefa 49 concluída.**
+A aprovação confirma as sete decisões ao final e a sequência incremental
+50–55. O documento descreve o comportamento a implementar; não comprova que
+API, schema ou integração já existam. Executar uma microtarefa por vez,
+limitando mudanças ao seu escopo. O registro desta aprovação é documental.
 
 ## Base verificada
 
@@ -115,7 +114,7 @@ e release/404 não impedem esse PUT de criar ACTIVE posteriormente. Um contador
 de tentativas ou lease no Order também não cancela HTTP já enviado.
 
 Recomendação: acrescentar uma operação interna de aborto durável no Inventory.
-É uma **extensão de contrato pendente de aprovação**, não um endpoint existente:
+É uma **extensão de contrato aprovada para implementação**, não um endpoint existente:
 
 ```http
 POST /internal/api/v1/inventory/reservations/{orderId}/abort
@@ -254,7 +253,7 @@ pedido já cancelado. Dados financeiros não são revalidados durante recuperaç
 
 | Nº | Entrega | Critério de conclusão |
 |---|---|---|
-| 49 | Definir e aprovar contrato Order–Inventory | Rascunho revisado pelo utilizador e decisões abaixo aprovadas; sem implementação. Ainda pendente de aprovação. |
+| 49 | Definir e aprovar contrato Order–Inventory | Concluída: proposta integral e sete decisões aprovadas explicitamente pelo utilizador; sem implementação nesta entrega documental. |
 | 50 | Persistir coordenação e aborto de reserva no Inventory | Nova migration, barreira por pedido/intenção e serialização com PUT; aborto antes/depois de reserva, rollback e concorrência PostgreSQL. |
 | 51 | Expor aborto durável no Inventory | Endpoint/DTO/allowlist internos aprovados, replay/erros, JWT e ausência de rota no Gateway; contratos existentes preservados. |
 | 52 | Persistir trabalho de estoque e transições no Order | Commit atômico com pedido, fases/decisão/agenda, unicidade e estado público; rollback/reinício/corridas com PostgreSQL. |
@@ -290,7 +289,7 @@ concorrência para a última etapa.
 - Falhas de identidade/credenciais, body inválido e CONFIRMED inesperado não
   viram sucesso de negócio; logs seguros e demais intenções continuam progredindo.
 
-## Decisões para aprovação
+## Decisões aprovadas pelo utilizador
 
 1. HTTP interno com a identidade existente, sem broker/Outbox/Payment nesta fase.
 2. Persistir pedido primeiro e concluir Cart antes de reservar; manter 201
