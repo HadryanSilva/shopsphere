@@ -27,8 +27,10 @@ permissões insuficientes retornam 403. Erros usam Problem Details existente.
 
 ## Transação e concorrência
 
-O caso de uso executa em transação REQUIRES_NEW. Primeiro insere somente o
-cabeçalho com `ON CONFLICT (order_id) DO NOTHING`, direcionado à PK existente.
+O caso de uso executa em transação REQUIRES_NEW. Desde a microtarefa 50,
+estabelece/bloqueia primeiro a coordenação e verifica impedimento de aborto,
+conforme [ABORT_PERSISTENCE.md](ABORT_PERSISTENCE.md). Depois insere somente o
+cabeçalho da reserva com `ON CONFLICT (order_id) DO NOTHING`, direcionado à PK existente.
 Uma corrida pela mesma identidade aguarda o commit/rollback do concorrente.
 Não se captura genericamente erro de integridade como repetição; não há
 transação marcada para rollback sendo reutilizada para ler um vencedor.

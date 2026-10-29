@@ -17,16 +17,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.UUID;
 
 @Service
 public class ReserveStockUseCaseImpl implements ReserveStockUseCase {
     private final InventoryReservationRepository reservations;
     private final InventoryStockRepository stocks;
+    private final ReservationCoordinationTransaction coordination;
     private final Duration ttl;
 
     public ReserveStockUseCaseImpl(InventoryReservationRepository reservations, InventoryStockRepository stocks,
+            ReservationCoordinationTransaction coordination,
             @Value("${inventory.reservations.ttl:PT15M}") String ttl) {
         var duration = Duration.parse(ttl);
         if (duration.compareTo(Duration.ofNanos(1000)) < 0) {
@@ -34,22 +35,16 @@ public class ReserveStockUseCaseImpl implements ReserveStockUseCase {
         }
         this.reservations = reservations;
         this.stocks = stocks;
+        this.coordination = coordination;
         this.ttl = duration;
     }
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Result execute(String serviceClientId, UUID orderId, ReserveStockRequest request) {
-        if (request == null || request.items() == null || request.items().isEmpty() || request.items().size() > 100) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Reservation requires 1 to 100 distinct products");
-        }
-        var ids = new HashSet<UUID>();
-        for (var item : request.items()) {
-            if (item == null || item.productId() == null || item.quantity() == null || item.quantity() <= 0
-                    || !ids.add(item.productId())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or duplicate reservation item");
-            }
-        }
+        var coordinated = coordination.lock(serviceClientId, orderId, request);
+        if (coordinated.getAbortedAt() != null)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Reservation was aborted");
         var items = request.items().stream().sorted(Comparator.comparing(ReserveStockRequest.Item::productId)).toList();
         var now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         boolean created = reservations.insertIfAbsent(orderId, serviceClientId, now, now.plus(ttl).truncatedTo(ChronoUnit.MICROS)) == 1;

@@ -80,7 +80,7 @@ class InventoryStartupPersistenceTests {
                 var flyway = context.getBean(Flyway.class);
                 assertThat(flyway.getConfiguration().getDataSource()).isSameAs(dataSource);
                 assertThat(flyway.info().applied()).filteredOn(migration -> migration.getVersion() != null)
-                        .extracting(migration -> migration.getVersion().toString()).containsExactly("1", "2", "3", "4");
+                        .extracting(migration -> migration.getVersion().toString()).containsExactly("1", "2", "3", "4", "5");
                 assertThat(flyway.info().pending()).isEmpty();
                 assertThat(flyway.migrate().migrationsExecuted).isZero();
                 assertThat(context.getBean(EntityManagerFactory.class).getProperties())
@@ -108,7 +108,8 @@ class InventoryStartupPersistenceTests {
                     tables.add(result.getString(1));
                 }
                 assertThat(tables).containsExactlyInAnyOrder("flyway_schema_history", "inventory_stock", "inventory_movements",
-                        "inventory_reservations", "inventory_reservation_items");
+                        "inventory_reservations", "inventory_reservation_items", "inventory_reservation_coordination",
+                        "inventory_reservation_coordination_items");
             }
         }
     }

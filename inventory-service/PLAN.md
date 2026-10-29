@@ -200,6 +200,11 @@ Definição concluída na microtarefa 49, em
 nas microtarefas 42–48. O novo documento propõe a ordem pedido/Cart/reserva,
 limite de checkout, aborto durável e entregas 50–55, sem alterar o Inventory.
 
+A microtarefa 50 foi implementada posteriormente: coordenação/impedimento
+durável, V5 e aborto local atômico, conforme [ABORT_PERSISTENCE.md](ABORT_PERSISTENCE.md).
+Suíte completa com PostgreSQL: 279 aprovados e um token real opcional ignorado,
+sem falhas. Endpoint/segurança HTTP pertencem à 51; ligação ao Order nas 52–55.
+
 Antes de alterar Order/Cart, definir transporte e identidade entre serviços,
 ordem de persistência/reserva, timeouts, respostas ambíguas e compensação após
 falha, preservando o protocolo já implementado de conclusão do carrinho.

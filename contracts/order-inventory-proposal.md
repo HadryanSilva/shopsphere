@@ -6,7 +6,7 @@ A aprovação confirma as sete decisões ao final e a sequência incremental
 API, schema ou integração já existam. Executar uma microtarefa por vez,
 limitando mudanças ao seu escopo. O registro desta aprovação é documental.
 
-## Base verificada
+## Base verificada na definição da microtarefa 49
 
 | Área | Implementação existente |
 |---|---|
@@ -159,9 +159,10 @@ Barreira e devolução fazem commit juntos; rollback não confirma aborto parcia
 Expiração/confirm/release não podem introduzir aquisição de locks em ordem inversa.
 Não prometer essa proteção com um SELECT ausente seguido de INSERT sem tratar corrida.
 
-Nomes SQL/constraints e retenção técnica serão fechados na microtarefa de
-persistência; não há DDL nesta definição. Preservar impedimentos sem purge
-automático, pois removê-los permitiria um PUT tardio.
+Nomes SQL/constraints foram fechados na microtarefa 50, conforme
+[ABORT_PERSISTENCE.md](../inventory-service/ABORT_PERSISTENCE.md). A definição
+49 não executou DDL. Preservar impedimentos sem purge automático, pois
+removê-los permitiria um PUT tardio.
 
 ## Estados e decisões no Order
 
@@ -210,7 +211,7 @@ pagamento aprovado. CONFIRMED inesperado exige revisão de política futura.
 
 Rejeição genérica 409 seguida de ausência pode incluir conflito técnico; a
 política proposta prefere encerrar com compensação segura a esperar reposição
-indefinidamente. Esse comportamento precisa de aprovação explícita. Se for
+indefinidamente. Esse comportamento recebeu aprovação explícita na 49. Se for
 necessário diferenciar insuficiência de concorrência para o produto, negociar
 códigos de erro estáveis numa revisão do contrato; não interpretar mensagens.
 
@@ -249,12 +250,12 @@ pedido já cancelado. Dados financeiros não são revalidados durante recuperaç
 - Logs só com orderId/checkoutId, fase, categoria, contador e resultado seguro;
   sem endereço, chave pública, JWT, secrets, payloads ou texto downstream.
 
-## Microtarefas candidatas, após aprovação
+## Microtarefas por dependência
 
 | Nº | Entrega | Critério de conclusão |
 |---|---|---|
 | 49 | Definir e aprovar contrato Order–Inventory | Concluída: proposta integral e sete decisões aprovadas explicitamente pelo utilizador; sem implementação nesta entrega documental. |
-| 50 | Persistir coordenação e aborto de reserva no Inventory | Nova migration, barreira por pedido/intenção e serialização com PUT; aborto antes/depois de reserva, rollback e concorrência PostgreSQL. |
+| 50 | Persistir coordenação e aborto de reserva no Inventory | Concluída: V5 e coordenação por pedido/cliente/itens, aborto local atômico e serialização com PUT. Rollback, reinício, 100 itens e disputas com criação/transições validados com PostgreSQL; suíte com 279 aprovados e um token real opcional ignorado. Sem endpoint ou ligação ao Order. |
 | 51 | Expor aborto durável no Inventory | Endpoint/DTO/allowlist internos aprovados, replay/erros, JWT e ausência de rota no Gateway; contratos existentes preservados. |
 | 52 | Persistir trabalho de estoque e transições no Order | Commit atômico com pedido, fases/decisão/agenda, unicidade e estado público; rollback/reinício/corridas com PostgreSQL. |
 | 53 | Implementar cliente e fluxo Order–Inventory | Limite de checkout com aborto durável do Cart, cliente interno, validações e matriz de recuperação; HTTP fora de transações. |

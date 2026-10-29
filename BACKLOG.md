@@ -128,7 +128,18 @@ definitivo e Payment ficam fora da entrega. As sete decisões foram aprovadas.
 O documento propõe as microtarefas 50–55 para persistência/aborto no Inventory,
 trabalho durável e integração no Order, worker e validação integrada. Numeração
 e escopo devem ser reconfirmados no início de cada entrega, executando uma por
-vez. A próxima é a 50, de persistência e aborto no Inventory, sem endpoint novo.
+vez.
+
+A microtarefa **50 — Persistir coordenação e aborto de reserva no Inventory**
+foi concluída: V5 acrescenta coordenação/itens sem FK para posições, o PUT
+verifica impedimento durável e o aborto local libera estado/saldo atomicamente.
+Reinício, rollback, versões, cem itens e concorrência entre criação, aborto,
+confirmação, liberação e expiração foram validados com PostgreSQL. Suíte completa:
+279 aprovados, sem falhas, e um teste opcional de token Keycloak real ignorado.
+V1–V4 intactas, V5 aplicada apenas em schemas temporários de teste. Sem endpoint
+novo, alteração de segurança ou ligação ao Order. Detalhes em
+[inventory-service/ABORT_PERSISTENCE.md](inventory-service/ABORT_PERSISTENCE.md).
+A próxima é a **51 — Expor aborto durável no Inventory**.
 
 ## Validação PostgreSQL
 

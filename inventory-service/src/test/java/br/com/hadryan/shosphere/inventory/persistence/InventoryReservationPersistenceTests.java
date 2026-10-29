@@ -163,7 +163,7 @@ class InventoryReservationPersistenceTests {
                     .findById(movement).orElseThrow();
             assertEquals(10, stored.getDelta()); assertEquals(10, stored.getOnHandAfter()); assertEquals("admin", stored.getActorSubject());
             assertEquals(0, context.getBean(InventoryReservationRepository.class).count());
-            assertEquals("4", context.getBean(Flyway.class).info().current().getVersion().toString());
+            assertEquals("5", context.getBean(Flyway.class).info().current().getVersion().toString());
         });
     }
 

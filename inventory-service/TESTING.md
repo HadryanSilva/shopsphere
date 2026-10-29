@@ -359,3 +359,53 @@ expandido para um nome de arquivo e não encontrou testes; a execução final us
 os oito nomes completos acima. Não foi necessário alterar código ou testes.
 As migrations foram exercitadas apenas nos schemas temporários dos testes.
 Não houve alteração de configuração do Keycloak nem de dados de uso normal.
+
+## Coordenação e aborto durável — microtarefa 50
+
+Modelo, transações e limites em [ABORT_PERSISTENCE.md](ABORT_PERSISTENCE.md).
+Testes novos: InventoryReservationCoordinationTests (quatro casos de domínio)
+e InventoryReservationAbortTests (23 casos com PostgreSQL).
+
+Executados no módulo Inventory:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*ReserveStockUseCaseTests' --tests '*InventoryServiceApplicationTests'
+.\gradlew.bat test --offline --no-daemon --tests '*InventoryReservationCoordinationTests' --tests '*ReserveStockUseCaseTests' --tests '*InventoryServiceApplicationTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/inventory_db'
+.\gradlew.bat test --offline --no-daemon --tests '*InventoryReservationAbortTests' --tests '*InventoryReservationCreationTests' --tests '*InventoryStartupPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+A primeira compilação apontou um nome de variável repetido na criação da
+reserva; o nome da nova coordenação foi corrigido. Os sete testes focados
+sem banco passaram. O conjunto focado com PostgreSQL aprovou 44 testes, sem
+falhas ou ignorados, incluindo criação existente e arranque/Flyway/JPA validate.
+Uma tentativa de execução foi bloqueada pelo cache Gradle no sandbox e foi
+repetida com permissão. Nenhuma configuração global foi alterada.
+
+A primeira suíte completa aprovou os casos novos, mas um teste de upgrade
+existente ainda esperava versão final 4 do Flyway. A expectativa foi atualizada
+para 5, preservando as verificações de saldos, versão e movimentos existentes.
+
+A repetição completa com PostgreSQL aprovou **279 testes**, zero falhas/erros
+e um teste opcional de token real do Keycloak ignorado (280 casos no relatório).
+Os 27 casos novos passaram; a V5 foi aplicada somente em schemas temporários.
+
+Cobertura nova com banco:
+
+- Aborto antes de existir reserva/posição, replay, impedimento após reposição,
+  GET/release ausentes preservados, identidade e divergência de payload.
+- Liberação única, preservação de outras reservas/onHand, expiração pelo
+  Inventory, terminal RELEASED/EXPIRED e rejeição de CONFIRMED sem desfazer consumo.
+- Rollback de todos os itens/estado quando a gravação do impedimento falha;
+  criação rejeitada não deixa coordenação/identidade consumida.
+- Upgrade V4 com reserva existente para V5 sem alterar saldos/inventar intenção;
+  reinício com impedimento/snapshot preservados e versão antiga rejeitada.
+- Corridas aborto/PUT, aborto/confirm/release/expire/abort, produtos sobrepostos
+  em ordem inversa e PUT bloqueado por barreira não commitada, com commit/rollback.
+- Cem itens atômicos, payloads inválidos sem escrita e constraints SQL de
+  cliente/versão/prazo, quantidade/PK/FK, sem exigir estoque no aborto antecipado.
+
+Schemas são temporários e exclusivos. Não foi executado o endpoint /abort,
+que ainda não existe; o caso de uso local foi chamado com transações reais.
+Não houve teste de token real do Keycloak nesta entrega ou integração ao Order.

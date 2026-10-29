@@ -8,6 +8,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import br.com.hadryan.shosphere.inventory.repository.InventoryStockRepository;
 import br.com.hadryan.shosphere.inventory.repository.InventoryMovementRepository;
 import br.com.hadryan.shosphere.inventory.repository.InventoryReservationRepository;
+import br.com.hadryan.shosphere.inventory.repository.InventoryReservationCoordinationRepository;
 import br.com.hadryan.shosphere.inventory.client.CatalogClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
@@ -26,6 +27,7 @@ class InventoryServiceApplicationTests {
     @MockitoBean private InventoryStockRepository inventoryStockRepository;
     @MockitoBean private InventoryMovementRepository inventoryMovementRepository;
     @MockitoBean private InventoryReservationRepository inventoryReservationRepository;
+    @MockitoBean private InventoryReservationCoordinationRepository inventoryReservationCoordinationRepository;
     @MockitoBean private CatalogClient catalogClient;
     @Autowired private ApplicationContext context;
 
