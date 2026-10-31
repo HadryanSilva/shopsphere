@@ -109,4 +109,4 @@ Comandos/resultados em [TESTING.md](TESTING.md).
 V6 é aplicada apenas em schemas temporários dos testes nesta entrega. Nenhuma
 API pública, regra JWT, dependência, Gateway ou código do Inventory mudou.
 JARs reais de todos os serviços, inclusive Inventory, falhas entre processos e
-tokens reais quando disponíveis continuam na microtarefa 55.
+tokens reais foram validados posteriormente na [microtarefa 55](STOCK_OPERATION.md).

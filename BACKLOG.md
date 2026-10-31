@@ -165,7 +165,16 @@ SKIP LOCKED, backoff, monitoramento e avisos limitados entre reinícios.
 HTTP continua fora de transações; retomadas preservam a decisão de aborto.
 Detalhes em [order-service/STOCK_RECOVERY.md](order-service/STOCK_RECOVERY.md)
 e resultados em [order-service/TESTING.md](order-service/TESTING.md).
-A próxima é a **55 — Validar integração e documentar operação**.
+A microtarefa **55 — Validar integração e documentar operação** foi concluída:
+suíte opt-in com os cinco JARs reais, Inventory, duas instâncias de Order,
+schemas exclusivos e falhas antes/depois de HTTP/commit, além de configuração
+de serviço conferida no Keycloak local e testes com tokens reais.
+Revalidação completa: 953 testes aprovados nos cinco módulos, sem falhas ou
+ignorados; Order inclui 30 cenários integrados reais.
+Operação e limites em [order-service/STOCK_OPERATION.md](order-service/STOCK_OPERATION.md)
+e resultados em [order-service/TESTING.md](order-service/TESTING.md).
+A sequência aprovada **49–55 está concluída**; a próxima entrega requer
+definição própria de contrato e escopo.
 
 ## Validação PostgreSQL
 

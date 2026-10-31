@@ -661,3 +661,64 @@ simulado nos testes do worker; a barreira real pertence ao código testado nas
 50–51 e à integração de processos da 55. Não foi habilitado o opt-in de JARs
 reais do checkout ou token real do Keycloak nesta entrega. Nenhuma migration
 foi aplicada a dados de uso normal, banco remoto ou compartilhado.
+
+## Integração e operação Order–Inventory — microtarefa 55
+
+Procedimento reproduzível, escopo e operação em [STOCK_OPERATION.md](STOCK_OPERATION.md).
+Foram gerados os cinco JARs reais com `.\gradlew.bat bootJar --offline --no-daemon`
+nos módulos Catalog, Cart, Inventory, Order e Gateway. No módulo Order:
+
+```powershell
+.\gradlew.bat compileTestJava --offline --no-daemon
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+$env:SHOPSPHERE_TEST_STOCK_INTEGRATION = 'true'
+.\gradlew.bat test --offline --no-daemon --tests '*StockFlowIntegrationTests.createsReservesAndReplaysCurrentStateWithoutRepricingOrConsumingPhysicalStock'
+.\gradlew.bat test --offline --no-daemon --tests '*StockFlowIntegrationTests'
+$env:SHOPSPHERE_TEST_CHECKOUT_INTEGRATION = 'true'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+A primeira tentativa de integração parou antes do arranque dos JARs porque
+PostgreSQL em localhost:5432 estava indisponível. Após os containers locais
+ficarem disponíveis, o mesmo cenário inicial passou sem alteração de aplicação.
+A primeira execução isolada da suíte nova aprovou **16 casos**, zero
+falhas/erros/ignorados. Depois foi acrescentado o caso de relógios diferentes e
+executada a regressão completa com as duas suítes de processos habilitadas.
+
+A execução final completa do Order aprovou **332 testes**, zero falhas/erros
+e zero ignorados. Inclui **30 cenários integrados reais**: 13 Cart–Order e 17
+Order–Inventory, incluindo relógios diferentes, concorrência entre dois Orders,
+reinícios, respostas perdidas e verificação dos logs. Os cinco módulos somaram
+**953 testes aprovados**, todos sem falhas/erros/ignorados nesta revalidação.
+
+CheckoutTestRuntime mantém seu modo anterior Cart–Order com quatro JARs e
+estoque desabilitado, e acrescenta um modo com cinco JARs/Inventory e worker
+ativos. O cenário concorrente inicia outro Order real com o mesmo schema e
+proxies. Os únicos componentes de teste são emissor/token/JWKS e injeções de
+falha de rede; serviços, filtros JWT, banco, migrations e agendamento são reais.
+Clock offset traduz consistentemente datas nas respostas, sem editar o relógio
+do sistema ou o estado de reserva no banco. A decisão terminal continua sendo
+tomada pelo Inventory real.
+
+Revalidação dos demais módulos com `.\gradlew.bat test --offline --no-daemon --rerun-tasks`:
+
+| Módulo | Resultado |
+|---|---|
+| Inventory, PostgreSQL inventory_db e token real | 305 aprovados, zero falhas/erros/ignorados |
+| Cart, PostgreSQL cart_db e token real | 139 aprovados, zero falhas/erros/ignorados |
+| Catalog, PostgreSQL catalog_db | 85 aprovados, zero falhas/erros/ignorados |
+| Gateway | 92 aprovados, zero falhas/erros/ignorados |
+
+O cliente existente shopsphere-order no Keycloak local foi consultado sem
+alterar configuração: service account ativa, CART_CHECKOUT_SERVICE e
+INVENTORY_SERVICE presentes. Tokens reais foram obtidos por client_credentials
+e fornecidos somente em memória/ambiente aos testes opt-in
+acceptsProvisionedLocalKeycloakServiceToken de Cart e Inventory. Tokens/secrets
+não foram exibidos nem persistidos em arquivos; cada suíte recebeu token novo.
+
+Os testes de cinco JARs usam o emissor controlado do harness; os testes opt-in
+de token real usam o issuer/JWKS do realm shopsphere existente. Não validam
+login PKCE do frontend ou uma implantação externa completa. Não houve alteração
+de Keycloak, código de produção, APIs, migrations, dependências ou defaults.
+Schemas são exclusivos de teste e removidos pelo harness; logs ficam em
+build/checkout-integration/<UUID>/ e são verificados quanto a secret/JWT/endereço.

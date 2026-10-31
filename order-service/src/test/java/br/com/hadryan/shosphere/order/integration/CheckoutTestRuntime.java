@@ -63,17 +63,25 @@ final class CheckoutTestRuntime implements AutoCloseable {
     final String issuerUrl = "http://127.0.0.1:" + issuer.getAddress().getPort();
     FaultProxy cartProxy;
     FaultProxy catalogProxy;
+    FaultProxy inventoryProxy;
+    final boolean withInventory;
+    final AtomicBoolean inventoryRole = new AtomicBoolean(true);
+    Duration inventoryTtl = Duration.ofMinutes(2);
+    boolean inventoryExpiration = true;
 
-    CheckoutTestRuntime() throws Exception { }
+    CheckoutTestRuntime() throws Exception { this(false); }
+    CheckoutTestRuntime(boolean withInventory) throws Exception { this.withInventory = withInventory; }
 
     void start() throws Exception {
         Files.createDirectories(logs);
-        for (var module : List.of("catalog-service", "cart-service", "order-service", "api-gateway")) {
+        var modules = new ArrayList<>(List.of("catalog-service", "cart-service", "order-service", "api-gateway"));
+        if (withInventory) modules.add("inventory-service");
+        for (var module : modules) {
             // Fail before starting any process if a required bootJar has not been built.
             jar(module);
             ports.put(module, freePort());
         }
-        for (var module : List.of("catalog-service", "cart-service", "order-service")) {
+        for (var module : modules.stream().filter(name -> !name.equals("api-gateway")).toList()) {
             var schema = "checkout_flow_" + module.substring(0, module.indexOf('-')) + "_" + UUID.randomUUID().toString().replace("-", "");
             jdbc.execute("CREATE SCHEMA " + schema);
             schemas.put(module, schema);
@@ -101,8 +109,11 @@ final class CheckoutTestRuntime implements AutoCloseable {
                 return;
             }
             tokenRequests.incrementAndGet();
+            var roles = new ArrayList<String>();
+            if (serviceRole.get()) roles.add("CART_CHECKOUT_SERVICE");
+            if (withInventory ? inventoryRole.get() : !serviceRole.get()) roles.add("INVENTORY_SERVICE");
             reply(exchange, 200, json.writeValueAsString(Map.of("access_token", token(serviceSubject, "shopsphere-order",
-                    serviceRole.get() ? List.of("CART_CHECKOUT_SERVICE") : List.of("INVENTORY_SERVICE"), "shopsphere-api"),
+                    roles, "shopsphere-api"),
                     "token_type", "Bearer", "expires_in", 300)));
         });
         issuer.start();
@@ -110,6 +121,10 @@ final class CheckoutTestRuntime implements AutoCloseable {
         catalogProxy = new FaultProxy(url("catalog-service"), false);
         launch("cart-service");
         cartProxy = new FaultProxy(url("cart-service"), true);
+        if (withInventory) {
+            launch("inventory-service");
+            inventoryProxy = new FaultProxy(url("inventory-service"), true);
+        }
         launch("order-service");
         launch("api-gateway");
     }
@@ -122,15 +137,18 @@ final class CheckoutTestRuntime implements AutoCloseable {
         }
     }
 
-    private void launch(String module) throws Exception {
+    private void launch(String module) throws Exception { launch(module, module); }
+
+    private void launch(String module, String processKey) throws Exception {
         var command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Xmx256m", "-jar", jar(module).toString(), "--server.address=127.0.0.1", "--server.port=" + ports.get(module),
+                "-Xmx256m", "-jar", jar(module).toString(), "--server.address=127.0.0.1", "--server.port=" + ports.get(processKey),
                 "--spring.security.oauth2.resourceserver.jwt.issuer-uri=" + issuerUrl,
                 "--spring.security.oauth2.resourceserver.jwt.jwk-set-uri=" + issuerUrl + "/certs",
                 "--spring.security.oauth2.resourceserver.jwt.audiences=shopsphere-api",
                 "--services.catalog.url=" + (module.equals("order-service") ? catalogProxy.url() : url("catalog-service")),
                 "--services.cart.url=" + (module.equals("order-service") ? cartProxy.url() : url("cart-service")),
-                "--services.order.url=" + url("order-service"), "--services.inventory.url=http://127.0.0.1:1",
+                "--services.order.url=" + url("order-service"), "--services.inventory.url="
+                        + (withInventory ? module.equals("order-service") ? inventoryProxy.url() : url("inventory-service") : "http://127.0.0.1:1"),
                 "--spring.jpa.show-sql=false", "--spring.jpa.hibernate.ddl-auto=validate",
                 "--spring.cloud.openfeign.client.config.catalog-service.readTimeout=800"));
         if (module.equals("order-service")) command.addAll(List.of("--checkout.snapshot.enabled=true",
@@ -138,8 +156,16 @@ final class CheckoutTestRuntime implements AutoCloseable {
                 "--checkout.snapshot.recovery.enabled=true", "--checkout.snapshot.recovery.interval=PT2S",
                 "--checkout.snapshot.recovery.lease=PT2S", "--checkout.snapshot.recovery.initial-backoff=PT2S",
                 "--checkout.snapshot.recovery.max-backoff=PT4S"));
+        if (module.equals("order-service")) command.add("--stock.recovery.enabled=" + withInventory);
+        if (module.equals("order-service") && withInventory) command.addAll(List.of(
+                "--stock.recovery.interval=PT0.25S", "--stock.recovery.monitor-interval=PT0.25S",
+                "--stock.recovery.lease=PT1S", "--stock.recovery.initial-backoff=PT0.5S",
+                "--stock.recovery.max-backoff=PT2S", "--stock.read-timeout=2000"));
+        if (module.equals("inventory-service")) command.addAll(List.of("--inventory.reservations.ttl=" + inventoryTtl,
+                "--inventory.reservations.expiration.enabled=" + inventoryExpiration,
+                "--inventory.reservations.expiration.delay=PT1S"));
         var builder = new ProcessBuilder(command).directory(root.resolve(module).toFile()).redirectErrorStream(true)
-                .redirectOutput(logs.resolve(module + "-" + System.nanoTime() + ".log").toFile());
+                .redirectOutput(logs.resolve(processKey + "-" + System.nanoTime() + ".log").toFile());
         if (schemas.containsKey(module)) {
             var schema = schemas.get(module);
             var dbUrl = Objects.requireNonNull(dataSource.getUrl());
@@ -154,12 +180,12 @@ final class CheckoutTestRuntime implements AutoCloseable {
         // Include schema arguments in the launched command as well.
         builder.command(command);
         var process = builder.start();
-        processes.put(module, process);
+        processes.put(processKey, process);
         try {
             await(() -> {
                 assertTrue(process.isAlive(), "Application exited: " + module + "; logs: " + logs);
                 try {
-                    int status = request(url(module), "GET", module.equals("catalog-service") || module.equals("api-gateway")
+                    int status = request(url(processKey), "GET", module.equals("catalog-service") || module.equals("api-gateway")
                             ? "/api/v1/products" : "/api/v1/" + (module.equals("cart-service") ? "carts/me" : "orders"), null, null).statusCode();
                     return status == 200 || status == 401;
                 } catch (Exception unavailable) { return false; }
@@ -169,7 +195,12 @@ final class CheckoutTestRuntime implements AutoCloseable {
 
     void restart(String module) throws Exception { stop(module); launch(module); }
 
-    private void stop(String module) throws InterruptedException {
+    void startOrderReplica() throws Exception {
+        ports.put("order-replica", freePort());
+        launch("order-service", "order-replica");
+    }
+
+    void stop(String module) throws InterruptedException {
         var process = processes.remove(module);
         if (process != null) {
             process.destroy();
@@ -185,6 +216,7 @@ final class CheckoutTestRuntime implements AutoCloseable {
     String user(UUID id) { return token(id, "shopsphere-web", List.of("CUSTOMER"), "shopsphere-api"); }
     String admin() { return token(UUID.randomUUID(), "shopsphere-web", List.of("ADMIN"), "shopsphere-api"); }
     String service() { return token(serviceSubject, "shopsphere-order", List.of("CART_CHECKOUT_SERVICE"), "shopsphere-api"); }
+    String inventoryService() { return token(serviceSubject, "shopsphere-order", List.of("INVENTORY_SERVICE"), "shopsphere-api"); }
 
     String token(UUID subject, String azp, List<String> roles, String audience) {
         try {
@@ -254,11 +286,16 @@ final class CheckoutTestRuntime implements AutoCloseable {
         try (var output = exchange.getResponseBody()) { output.write(bytes); }
     }
 
-    enum Fault { NONE, HOLD_PREPARE, LOSE_PREPARE, BLOCK_COMPLETE, LOSE_COMPLETE, LOSE_ABORT, BLOCK_BATCH, LOSE_ORDER_RESPONSE }
+    enum Fault { NONE, HOLD_PREPARE, LOSE_PREPARE, BLOCK_COMPLETE, LOSE_COMPLETE, LOSE_ABORT, BLOCK_BATCH, LOSE_ORDER_RESPONSE,
+        BLOCK_INVENTORY, LOSE_RESERVE, LATE_RESERVE_REJECTION, INVALID_INVENTORY, CLOCK_OFFSET_INVENTORY }
 
     final class FaultProxy implements AutoCloseable {
         final HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         final AtomicInteger forwarded = new AtomicInteger();
+        final AtomicInteger lateStatus = new AtomicInteger();
+        final AtomicBoolean held = new AtomicBoolean();
+        final ConcurrentMap<String, AtomicInteger> requests = new ConcurrentHashMap<>();
+        volatile UUID orderFilter;
         volatile Fault fault = Fault.NONE;
         volatile CountDownLatch prepared = new CountDownLatch(1);
         volatile CountDownLatch release = new CountDownLatch(1);
@@ -267,9 +304,20 @@ final class CheckoutTestRuntime implements AutoCloseable {
             server.setExecutor(handlers);
             server.createContext("/", exchange -> {
                 try {
-                    var selected = fault;
                     var path = exchange.getRequestURI().getPath();
+                    var selected = orderFilter == null || path.contains(orderFilter.toString()) ? fault : Fault.NONE;
+                    var gate = release;
+                    var signal = prepared;
                     var preparing = "PUT".equals(exchange.getRequestMethod());
+                    requests.computeIfAbsent(exchange.getRequestMethod() + " " + path, ignored -> new AtomicInteger()).incrementAndGet();
+                    if (selected == Fault.BLOCK_INVENTORY) { reply(exchange, 503, "{}"); return; }
+                    if (selected == Fault.INVALID_INVENTORY) { reply(exchange, 200, "{invalid-json"); return; }
+                    boolean delayedPut = selected == Fault.LATE_RESERVE_REJECTION && preparing && held.compareAndSet(false, true);
+                    if (selected == Fault.LATE_RESERVE_REJECTION && preparing) {
+                        if (!delayedPut) { reply(exchange, 409, "{}"); return; }
+                        signal.countDown();
+                        if (!gate.await(60, TimeUnit.SECONDS)) throw new IOException("Reservation gate timed out");
+                    }
                     if (selected == Fault.BLOCK_COMPLETE && path.endsWith("/complete")
                             || selected == Fault.BLOCK_BATCH && path.endsWith("/batch")) {
                         reply(exchange, 503, "{}");
@@ -289,20 +337,33 @@ final class CheckoutTestRuntime implements AutoCloseable {
                     }
                     builder.method(exchange.getRequestMethod(), HttpRequest.BodyPublishers.ofByteArray(exchange.getRequestBody().readAllBytes()));
                     var response = http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+                    var responseBody = response.body();
+                    if (selected == Fault.CLOCK_OFFSET_INVENTORY && response.statusCode() < 300) {
+                        var payload = json.readTree(responseBody);
+                        var node = path.endsWith("/abort") ? payload.get("reservation") : payload;
+                        if (node != null && node.isObject() && node.has("expiresAt")) {
+                            var translated = (tools.jackson.databind.node.ObjectNode) node;
+                            for (var field : List.of("createdAt", "expiresAt", "updatedAt"))
+                                translated.put(field, Instant.parse(node.get(field).asText()).minusSeconds(180).toString());
+                            responseBody = json.writeValueAsBytes(payload);
+                        }
+                    }
+                    if (delayedPut) lateStatus.set(response.statusCode());
                     forwarded.incrementAndGet();
                     if (preparing && selected == Fault.HOLD_PREPARE && response.statusCode() < 300) {
-                        prepared.countDown();
-                        if (!release.await(15, TimeUnit.SECONDS)) throw new IOException("Preparation gate timed out");
+                        signal.countDown();
+                        if (!gate.await(15, TimeUnit.SECONDS)) throw new IOException("Preparation gate timed out");
                     }
                     if (preparing && selected == Fault.LOSE_PREPARE || path.endsWith("/complete") && selected == Fault.LOSE_COMPLETE
                             || path.endsWith("/abort") && selected == Fault.LOSE_ABORT
-                            || path.equals("/api/v1/orders") && selected == Fault.LOSE_ORDER_RESPONSE) {
+                            || path.equals("/api/v1/orders") && selected == Fault.LOSE_ORDER_RESPONSE
+                            || preparing && selected == Fault.LOSE_RESERVE) {
                         Thread.sleep(3000); // The real downstream commit succeeded; the caller times out at 2000 ms.
                         return;
                     }
                     response.headers().firstValue("Content-Type").ifPresent(value -> exchange.getResponseHeaders().set("Content-Type", value));
-                    exchange.sendResponseHeaders(response.statusCode(), response.body().length == 0 ? -1 : response.body().length);
-                    try (var output = exchange.getResponseBody()) { output.write(response.body()); }
+                    exchange.sendResponseHeaders(response.statusCode(), responseBody.length == 0 ? -1 : responseBody.length);
+                    try (var output = exchange.getResponseBody()) { output.write(responseBody); }
                 } catch (Exception failure) {
                     // Socket cancellation/restart is expected during fault injection. Never log authorization/body.
                     exchange.close();
@@ -312,24 +373,26 @@ final class CheckoutTestRuntime implements AutoCloseable {
         }
 
         String url() { return "http://127.0.0.1:" + server.getAddress().getPort(); }
-        void reset() { fault = Fault.NONE; release.countDown(); prepared = new CountDownLatch(1); release = new CountDownLatch(1); }
+        void reset() { fault = Fault.NONE; release.countDown(); prepared = new CountDownLatch(1); release = new CountDownLatch(1); held.set(false); lateStatus.set(0); orderFilter = null; }
         @Override public void close() { release.countDown(); server.stop(0); }
     }
 
     @Override public void close() throws Exception {
         if (cartProxy != null) cartProxy.reset();
         if (catalogProxy != null) catalogProxy.reset();
+        if (inventoryProxy != null) inventoryProxy.reset();
         try {
-            for (var module : List.of("api-gateway", "order-service", "cart-service", "catalog-service")) stop(module);
+            for (var module : List.of("order-replica", "api-gateway", "order-service", "inventory-service", "cart-service", "catalog-service")) stop(module);
         } finally {
             if (cartProxy != null) cartProxy.close();
             if (catalogProxy != null) catalogProxy.close();
+            if (inventoryProxy != null) inventoryProxy.close();
             issuer.stop(0);
             handlers.close();
             http.close();
             // Only schemas created and recorded by this runtime are eligible for cleanup.
             for (var schema : schemas.values()) {
-                if (!schema.matches("checkout_flow_(catalog|cart|order)_[0-9a-f]{32}")) throw new IllegalStateException("Invalid test schema");
+                if (!schema.matches("checkout_flow_(catalog|cart|order|inventory)_[0-9a-f]{32}")) throw new IllegalStateException("Invalid test schema");
                 jdbc.execute("DROP SCHEMA " + schema + " CASCADE");
             }
         }

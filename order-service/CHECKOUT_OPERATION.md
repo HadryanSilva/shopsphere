@@ -1,5 +1,9 @@
 # Checkout integrado — microtarefa 48
 
+Este documento registra a validação Cart–Order da etapa 48. A evolução com
+Inventory e o comportamento atual de estoque das etapas 49–55 estão em
+[STOCK_OPERATION.md](STOCK_OPERATION.md), incluindo configuração e operação.
+
 O fluxo por snapshot conecta Gateway, Cart, Order e Catalog via HTTP real.
 Order usa identidade de serviço no protocolo interno do Cart, revalida os
 dados comerciais no Catalog e persiste o pedido antes de concluir o carrinho.
@@ -128,6 +132,8 @@ disponível mediante SHOPSPHERE_TEST_CART_CHECKOUT_TOKEN; a execução real dess
 teste deve ser reportada separadamente. A suíte integrada não comprova a
 configuração atual de um realm externo nem o login PKCE do frontend.
 
-Não há garantia de estoque/pagamento: o pedido permanece PENDING_STOCK.
-Inventory, Payment, RabbitMQ, Outbox e Saga não participam deste fluxo.
-Não houve contrato público, migration, dependência ou infraestrutura nova.
+Na entrega 48, não havia garantia de estoque/pagamento: o pedido permanecia
+PENDING_STOCK e Inventory não participava. A integração de estoque foi concluída
+nas etapas 49–55, conforme [STOCK_OPERATION.md](STOCK_OPERATION.md).
+Payment, RabbitMQ, Outbox e Saga continuam fora do fluxo. A entrega 48 não
+acrescentou contrato público, migration, dependência ou infraestrutura.

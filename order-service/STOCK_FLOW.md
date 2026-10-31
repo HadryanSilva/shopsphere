@@ -88,4 +88,5 @@ Não houve mudança de Gateway, Inventory, Keycloak ou ativação do modo snapsh
 Testes usam servidor HTTP local para cliente/token e PostgreSQL temporário
 para o fluxo, com cliente Inventory simulado e verificação de ausência de
 transação durante as chamadas. Resultados em [TESTING.md](TESTING.md).
-A integração com JARs/Inventory real e falhas entre processos pertence à 55.
+A integração com JARs/Inventory real e falhas entre processos foi concluída na
+[55](STOCK_OPERATION.md).
