@@ -172,7 +172,8 @@ O trabalho durável de estoque é separado de CheckoutIntentStatus. COMPLETED da
 intenção continua significando Cart concluído e não deve impedir a agenda de
 estoque. As fases abaixo foram implementadas na microtarefa 52, como transições
 locais em [STOCK_PERSISTENCE.md](../order-service/STOCK_PERSISTENCE.md).
-O cliente HTTP e a execução agendada pertencem às 53–54:
+O cliente e a reconciliação explícita foram implementados na 53, em
+[STOCK_FLOW.md](../order-service/STOCK_FLOW.md). A execução agendada pertence à 54:
 
 | Trabalho | Comportamento e efeito público proposto |
 |---|---|
@@ -262,7 +263,7 @@ pedido já cancelado. Dados financeiros não são revalidados durante recuperaç
 | 50 | Persistir coordenação e aborto de reserva no Inventory | Concluída: V5 e coordenação por pedido/cliente/itens, aborto local atômico e serialização com PUT. Rollback, reinício, 100 itens e disputas com criação/transições validados com PostgreSQL; suíte com 279 aprovados e um token real opcional ignorado. Sem endpoint ou ligação ao Order. |
 | 51 | Expor aborto durável no Inventory | Concluída: POST/DTO/allowlist internos, replay 200 com null explícito ou reserva terminal, validação/erros e JWT. HTTP com PostgreSQL e isolamento no Gateway validados; contratos existentes e V1–V5 preservados. Detalhes em ABORT_API.md e TESTING.md do Inventory. |
 | 52 | Persistir trabalho de estoque e transições no Order | Concluída: V5 e trabalho único criado no commit do pedido por snapshot, fases/decisão/observação/agenda e transições locais atômicas com o estado público. Oitenta testes focados com PostgreSQL aprovados, incluindo rollback/reinício/corridas; sem cliente HTTP ou worker. Detalhes em STOCK_PERSISTENCE.md e TESTING.md do Order. |
-| 53 | Implementar cliente e fluxo Order–Inventory | Limite de checkout com aborto durável do Cart, cliente interno, validações e matriz de recuperação; HTTP fora de transações. |
+| 53 | Implementar cliente e fluxo Order–Inventory | Concluída: limite de cem produtos no checkout por snapshot com aborto durável do Cart, cliente interno com token de serviço/timeouts e validações, reconciliação explícita e matriz de recuperação. HTTP fora de transações; sem worker novo ou migration. Detalhes em STOCK_FLOW.md e TESTING.md do Order. |
 | 54 | Agendar reserva, monitoramento e compensação | Lotes/backoff/claims, cooperação com conclusão Cart, expiração e alertas; retomada sem JWT público e sem duplicar efeitos. |
 | 55 | Validar integração e documentar operação | JARs reais incluindo Inventory, schemas isolados, falhas após cada commit/HTTP e respostas perdidas; tokens reais quando disponíveis, limitações explícitas. |
 

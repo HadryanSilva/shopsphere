@@ -6,6 +6,8 @@ import br.com.hadryan.shosphere.order.model.Order;
 import br.com.hadryan.shosphere.order.model.enums.*;
 import br.com.hadryan.shosphere.order.repository.*;
 import br.com.hadryan.shosphere.order.service.impl.*;
+import br.com.hadryan.shosphere.order.client.InventoryReservationClient;
+import br.com.hadryan.shosphere.order.client.StockIntegrationFailure;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
@@ -23,12 +25,16 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @EnabledIfEnvironmentVariable(named = "SHOPSPHERE_TEST_POSTGRES_URL", matches = ".+")
 class StockWorkPersistenceTests {
@@ -38,6 +44,7 @@ class StockWorkPersistenceTests {
     private String schema;
     private final UUID customer = UUID.randomUUID(), key = UUID.randomUUID(), cart = UUID.randomUUID(), product = UUID.randomUUID();
     private final UUID existingOrder = UUID.randomUUID();
+    private final InventoryReservationClient inventory = mock(InventoryReservationClient.class);
     private final Instant created = Instant.parse("2026-10-30T12:00:00Z"), expires = created.plusSeconds(900);
 
     @BeforeEach void setUp() {
@@ -61,6 +68,8 @@ class StockWorkPersistenceTests {
 
     private void openContext() {
         context = new AnnotationConfigApplicationContext();
+        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("stock-flow-test", Map.of("checkout.snapshot.enabled", "true")));
+        context.registerBean(InventoryReservationClient.class, () -> inventory);
         context.registerBean(DataSource.class, () -> dataSource);
         context.registerBean("entityManagerFactory", LocalContainerEntityManagerFactoryBean.class, () -> {
             var factory = new LocalContainerEntityManagerFactoryBean();
@@ -83,6 +92,7 @@ class StockWorkPersistenceTests {
 
     private CheckoutIntentTransaction checkout() { return context.getBean(CheckoutIntentTransaction.class); }
     private StockWorkTransaction stock() { return context.getBean(StockWorkTransaction.class); }
+    private StockReservationFlow flow() { return context.getBean(StockReservationFlow.class); }
     private ShippingAddress address() { return new ShippingAddress("Customer", "Street", null, "Lisbon", "1000-001", "PT"); }
     private CheckoutIntentSnapshot prepared() {
         var intent = checkout().start(customer, key, address());
@@ -330,9 +340,177 @@ class StockWorkPersistenceTests {
         }
     }
 
+    private StockReservationObservation active(UUID id) {
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "Inventory HTTP must not run under a database transaction");
+        var now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        return new StockReservationObservation(id, StockReservationStatus.ACTIVE,
+                List.of(new StockWorkSnapshot.Item(product, 2)), now, now.plusSeconds(900), now);
+    }
+    private StockIntegrationFailure missing() { return new StockIntegrationFailure(404, StockFailureCategory.INVALID_UPSTREAM_RESPONSE); }
+
+    @Test void flowWaitsForDurableCartCompletionThenReservesOutsideEvenAnOuterTransaction() {
+        var id = persist().id();
+        assertEquals(StockWorkPhase.WAITING_CART, flow().resume(id).phase());
+        verifyNoInteractions(inventory);
+        checkout().completed(stock().get(id).checkoutId());
+        when(inventory.get(any())).thenAnswer(call -> { assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); throw missing(); });
+        when(inventory.reserve(any())).thenAnswer(call -> {
+            var work = call.getArgument(0, StockWorkSnapshot.class);
+            assertEquals(id, work.orderId());
+            assertEquals(List.of(new StockWorkSnapshot.Item(product, 2)), work.items());
+            return active(id);
+        });
+        new TransactionTemplate(context.getBean(JpaTransactionManager.class)).execute(status -> {
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
+            assertEquals(StockWorkPhase.RESERVED, flow().resume(id).phase());
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
+            return null;
+        });
+        assertEquals(OrderStatus.PENDING_PAYMENT, response(id).status());
+        verify(inventory).reserve(any()); verify(inventory, never()).abort(any());
+    }
+
+    @Test void lostPutResponseIsRecoveredByGetAfterRestartWithoutAnotherReservationIntent() {
+        var id = ready();
+        var remote = active(id);
+        when(inventory.get(any())).thenThrow(missing()).thenReturn(remote);
+        when(inventory.reserve(any())).thenThrow(new StockIntegrationFailure(0, StockFailureCategory.UPSTREAM_UNAVAILABLE));
+        var pending = flow().resume(id);
+        assertEquals(StockWorkPhase.RESERVE_PENDING, pending.phase());
+        assertEquals(1, pending.attemptCount());
+        assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+        context.close(); openContext();
+        assertEquals(StockWorkPhase.RESERVED, flow().resume(id).phase());
+        verify(inventory).reserve(any()); verify(inventory, never()).abort(any());
+        assertEquals(1, count("stock_work"));
+    }
+
+    @ParameterizedTest @ValueSource(ints = {404, 409})
+    void rejectedPutAndAbsentGetCancelOnlyAfterDurableAbortProof(int code) {
+        var id = ready();
+        when(inventory.get(any())).thenThrow(missing());
+        when(inventory.reserve(any())).thenThrow(new StockIntegrationFailure(code, StockFailureCategory.INVALID_UPSTREAM_RESPONSE));
+        when(inventory.abort(any())).thenAnswer(call -> {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+            assertEquals(StockWorkPhase.ABORT_PENDING, stock().get(id).phase());
+            assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+            return new InventoryReservationClient.AbortProof(id, null);
+        });
+        var closed = flow().resume(id);
+        assertEquals(StockWorkPhase.CLOSED, closed.phase());
+        assertEquals(StockWorkReason.RESERVATION_REJECTED, closed.reason());
+        assertEquals(OrderStatus.CANCELLED, response(id).status());
+        assertEquals(CheckoutIntentStatus.COMPLETED, checkout().get(closed.checkoutId()).status());
+        verify(inventory, times(2)).get(any()); verify(inventory).abort(any());
+    }
+
+    @Test void concurrentWinningReservationAfterPutRejectionIsAcceptedInsteadOfAborted() {
+        var id = ready();
+        when(inventory.get(any())).thenThrow(missing()).thenReturn(active(id));
+        when(inventory.reserve(any())).thenThrow(new StockIntegrationFailure(409, StockFailureCategory.INVALID_UPSTREAM_RESPONSE));
+        assertEquals(StockWorkPhase.RESERVED, flow().resume(id).phase());
+        verify(inventory, never()).abort(any());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"AUTHENTICATION_CONFIGURATION", "UPSTREAM_UNAVAILABLE"})
+    void technicalFailuresPreservePhaseAndPublicState(String category) {
+        var id = ready();
+        when(inventory.get(any())).thenThrow(new StockIntegrationFailure(0, StockFailureCategory.valueOf(category)));
+        var pending = flow().resume(id);
+        assertEquals(StockWorkPhase.RESERVE_PENDING, pending.phase());
+        assertEquals(StockFailureCategory.valueOf(category), pending.lastFailureCategory());
+        assertEquals(1, pending.attemptCount());
+        assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+        verify(inventory, never()).reserve(any()); verify(inventory, never()).abort(any());
+    }
+
+    @Test void expirationRequestsAbortAndInventoryDecidesTerminalState() {
+        var id = ready();
+        when(inventory.get(any())).thenReturn(observation(id, StockReservationStatus.ACTIVE));
+        when(inventory.abort(any())).thenAnswer(call -> {
+            assertEquals(StockWorkPhase.ABORT_PENDING, stock().get(id).phase());
+            assertEquals(OrderStatus.PENDING_PAYMENT, response(id).status());
+            return new InventoryReservationClient.AbortProof(id, observation(id, StockReservationStatus.RELEASED));
+        });
+        assertEquals(StockWorkPhase.CLOSED, flow().resume(id).phase());
+        assertEquals(OrderStatus.CANCELLED, response(id).status());
+        assertEquals(StockReservationStatus.RELEASED, stock().get(id).reservationStatus());
+        verify(inventory, never()).reserve(any());
+    }
+
+    @Test void abortTimeoutSurvivesRestartAndNeverReissuesPut() {
+        var id = ready();
+        stock().requestAbort(id, StockWorkReason.RESERVATION_REJECTED);
+        when(inventory.abort(any())).thenThrow(new StockIntegrationFailure(0, StockFailureCategory.UPSTREAM_UNAVAILABLE))
+                .thenReturn(new InventoryReservationClient.AbortProof(id, null));
+        assertEquals(StockWorkPhase.ABORT_PENDING, flow().resume(id).phase());
+        assertEquals(1, stock().get(id).attemptCount());
+        assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+        context.close(); openContext();
+        assertEquals(StockWorkPhase.CLOSED, flow().resume(id).phase());
+        verify(inventory, never()).reserve(any()); verify(inventory, never()).get(any());
+    }
+
+    @Test void abortConflictRequiresReviewAndPreservesCancellationDecision() {
+        var id = ready(); stock().requestAbort(id, StockWorkReason.RESERVATION_REJECTED);
+        when(inventory.abort(any())).thenThrow(new StockIntegrationFailure(409, StockFailureCategory.INVALID_UPSTREAM_RESPONSE));
+        var review = flow().resume(id);
+        assertEquals(StockWorkPhase.REVIEW_REQUIRED, review.phase());
+        assertTrue(review.abortRequested());
+        assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+        verify(inventory, never()).reserve(any());
+    }
+
+    @Test void invalidResponseAndUnexpectedConfirmedNeverBecomeBusinessSuccess() {
+        var id = ready();
+        when(inventory.get(any())).thenReturn(observation(id, StockReservationStatus.CONFIRMED));
+        assertEquals(StockWorkPhase.REVIEW_REQUIRED, flow().resume(id).phase());
+        assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+        when(inventory.get(any())).thenThrow(new StockIntegrationFailure(400, StockFailureCategory.INVALID_UPSTREAM_RESPONSE));
+        assertEquals(StockWorkPhase.REVIEW_REQUIRED, flow().resume(id).phase());
+        verify(inventory, never()).reserve(any()); verify(inventory, never()).abort(any());
+    }
+
+    @Test void responseAfterDurableAbortCannotPromoteOrderAndMustConfirmAbort() {
+        var id = ready();
+        when(inventory.get(any())).thenThrow(missing());
+        when(inventory.reserve(any())).thenAnswer(call -> {
+            stock().requestAbort(id, StockWorkReason.RESERVATION_REJECTED);
+            return active(id);
+        });
+        when(inventory.abort(any())).thenReturn(new InventoryReservationClient.AbortProof(id, observation(id, StockReservationStatus.RELEASED)));
+        assertEquals(StockWorkPhase.CLOSED, flow().resume(id).phase());
+        assertEquals(OrderStatus.CANCELLED, response(id).status());
+        assertTrue(stock().get(id).abortRequested());
+    }
+
+    @Test void durableDecisionBetweenGetAndPutPreventsStartingPut() {
+        var id = ready();
+        when(inventory.get(any())).thenAnswer(call -> {
+            stock().requestAbort(id, StockWorkReason.RESERVATION_REJECTED);
+            throw missing();
+        });
+        assertEquals(StockWorkPhase.ABORT_PENDING, flow().resume(id).phase());
+        verify(inventory, never()).reserve(any());
+        assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+    }
+
+    @Test void failedLocalCommitAfterRemoteSuccessIsRecoveredWithoutNewPut() {
+        var id = ready();
+        var remote = active(id);
+        when(inventory.get(any())).thenReturn(remote);
+        sql("ALTER TABLE $schema.orders ADD CONSTRAINT reject_flow_payment CHECK (status <> 'PENDING_PAYMENT')");
+        var pending = flow().resume(id);
+        assertEquals(StockWorkPhase.RESERVE_PENDING, pending.phase());
+        assertEquals(StockFailureCategory.PERSISTENCE_FAILURE, pending.lastFailureCategory());
+        sql("ALTER TABLE $schema.orders DROP CONSTRAINT reject_flow_payment");
+        assertEquals(StockWorkPhase.RESERVED, flow().resume(id).phase());
+        verify(inventory, never()).reserve(any());
+    }
+
     @EnableTransactionManagement
     @EnableJpaRepositories(basePackageClasses = OrderRepository.class)
-    @Import({CheckoutIntentTransaction.class, StockWorkTransaction.class, CreateOrderTransaction.class, GetOrderByIdUseCaseImpl.class})
+    @Import({CheckoutIntentTransaction.class, StockWorkTransaction.class, StockReservationFlow.class, CreateOrderTransaction.class, GetOrderByIdUseCaseImpl.class})
     static class Config {
         @Bean JpaTransactionManager transactionManager(EntityManagerFactory factory) { return new JpaTransactionManager(factory); }
     }

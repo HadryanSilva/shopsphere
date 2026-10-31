@@ -542,6 +542,51 @@ class SnapshotCheckoutPersistenceTests {
         assertEquals(0, count("orders"));
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {100, 101})
+    void snapshotCheckoutLimitKeepsHundredAtomicAndAbortsHundredAndOneDurably(int size) {
+        var items = java.util.stream.IntStream.range(0, size)
+                .mapToObj(i -> new CartCheckoutResponse.Item(UUID.randomUUID(), 1)).toList();
+        doAnswer(call -> {
+            assertOutsideTransaction();
+            var base = remote(call.getArgument(0), "PREPARED", null);
+            return new CartCheckoutResponse(base.checkoutId(), customer, cartId, "PREPARED", items, null, base.preparedAt(), null, null);
+        }).when(cart).prepare(any(), eq(customer));
+        doAnswer(call -> {
+            assertOutsideTransaction();
+            assertEquals(CheckoutIntentStatus.ABORT_PENDING, tx().get(call.getArgument(0)).status());
+            var base = remote(call.getArgument(0), "ABORTED", null);
+            return new CartCheckoutResponse(base.checkoutId(), customer, cartId, "ABORTED", items, null, base.preparedAt(), null, base.abortedAt());
+        }).when(cart).abort(any(), eq(customer));
+        doAnswer(call -> {
+            assertOutsideTransaction();
+            return items.stream().map(item -> new ProductResponse(item.productId(), "Product", BigDecimal.ONE, "EUR", "ACTIVE")).toList();
+        }).when(catalog).getProducts(anyList());
+        doAnswer(call -> {
+            var base = remote(call.getArgument(0), "COMPLETED", call.getArgument(1));
+            return new CartCheckoutResponse(base.checkoutId(), customer, cartId, "COMPLETED", items, base.orderId(), base.preparedAt(), base.completedAt(), null);
+        }).when(cart).complete(any(), any());
+        if (size == 101) {
+            assertStatus(409, this::execute);
+            assertEquals(CheckoutIntentStatus.ABORTED, intent().status());
+            assertEquals(CheckoutFailureReason.PRODUCT_CONFLICT, intent().failureReason());
+            assertEquals(0, count("orders")); assertEquals(0, count("stock_work"));
+            assertStatus(409, this::execute);
+            verifyNoInteractions(catalog);
+            verify(cart).abort(intent().checkoutId(), customer);
+            verify(cart, never()).complete(any(), any());
+        } else {
+            var saved = execute();
+            assertEquals(100, saved.items().size());
+            assertEquals(new BigDecimal("100.00"), saved.totalAmount());
+            assertEquals(CheckoutIntentStatus.COMPLETED, intent().status());
+            assertEquals(saved, execute());
+            assertEquals(1, count("orders")); assertEquals(1, count("stock_work"));
+            verify(cart, never()).abort(any(), any());
+        }
+        verify(cart).prepare(any(), eq(customer));
+    }
+
     @TestConfiguration
     @EnableTransactionManagement
     @EnableJpaRepositories(basePackageClasses = OrderRepository.class)

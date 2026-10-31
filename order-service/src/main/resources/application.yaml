@@ -1,3 +1,11 @@
+services:
+  inventory:
+    url: ${SHOPSPHERE_INVENTORY_URL:http://localhost:8084}
+
+stock:
+  connect-timeout: ${SHOPSPHERE_STOCK_CONNECT_TIMEOUT:2000}
+  read-timeout: ${SHOPSPHERE_STOCK_READ_TIMEOUT:5000}
+
 checkout:
   snapshot:
     enabled: ${SHOPSPHERE_CHECKOUT_SNAPSHOT_ENABLED:false}

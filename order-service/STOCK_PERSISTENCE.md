@@ -57,7 +57,7 @@ registram categoria/agenda sem cancelar. ABORT_PENDING preserva a primeira razã
 e impede retorno a RESERVED, inclusive após reinício ou disputa entre threads.
 
 aborted recebe a identidade da prova e uma observação terminal opcional. O
-cliente da próxima etapa deverá validar o envelope ABORTED antes dessa chamada.
+cliente da [etapa 53](STOCK_FLOW.md) valida o envelope ABORTED antes dessa chamada.
 Se uma reserva já foi observada, prova com reservation null exige revisão.
 Um GET/404 isolado não chama essa transição. CLOSED é estável e não reabre por
 resposta ACTIVE tardia. REVIEW_REQUIRED também preserva a decisão, sem resolução
@@ -80,7 +80,8 @@ Os caminhos Java partem de src/main/java/br/com/hadryan/shosphere/order/.
 Testes: StockWorkTests e StockWorkPersistenceTests; comandos/resultados em
 [TESTING.md](TESTING.md).
 
-Não há cliente Inventory, chamadas HTTP, limite de 100 produtos no checkout,
+Na entrega 52, não havia cliente Inventory, chamadas HTTP, limite de 100 produtos no checkout,
 worker, claims/lease, cálculo de backoff ou ativação automática das transições
-nesta etapa. Esses pontos pertencem às microtarefas 53–54; a integração real,
-à 55. Nenhuma API, segurança, dependência ou configuração de Keycloak mudou.
+nessa etapa. Cliente, limite e reconciliação explícita foram acrescentados na
+[53](STOCK_FLOW.md); worker/claims/backoff continuam na 54 e integração real
+na 55. A entrega 52 não alterou API, segurança, dependências ou Keycloak.

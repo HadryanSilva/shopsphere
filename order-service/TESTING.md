@@ -546,3 +546,59 @@ cliente Inventory, chamadas remotas, worker novo ou integração real de estoque
 nesta entrega; as transições locais são chamadas explicitamente pelos testes.
 O limite de cem produtos no checkout pertence à 53. Os cenários opt-in com
 JARs/HTTP do checkout entre serviços não foram habilitados nesta execução.
+
+## Cliente e fluxo Order–Inventory — microtarefa 53
+
+Contrato, configuração e limites em [STOCK_FLOW.md](STOCK_FLOW.md).
+Executados no diretório order-service:
+
+```powershell
+.\gradlew.bat compileTestJava --offline --no-daemon
+.\gradlew.bat test --offline --no-daemon --tests '*InventoryReservationClientTests' --tests '*CartCheckoutClientTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*StockWorkPersistenceTests' --tests '*SnapshotCheckoutPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --tests '*InventoryReservationClientTests' --tests '*CartCheckoutClientTests' --tests '*SnapshotCheckoutPersistenceTests.snapshotCheckoutLimit*'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+O primeiro conjunto HTTP aprovou 40 casos. Depois de acrescentar timeout real e
+proteção contra renovação de prazo, a repetição HTTP/limite aprovou **44 testes**,
+zero falhas/erros/ignorados: 30 do cliente Inventory, 12 existentes do cliente
+Cart e dois cenários de checkout 100/101 com PostgreSQL.
+
+A primeira execução PostgreSQL teve 71 aprovados e duas falhas na preparação
+dos mocks dos casos de limite: when avaliava respostas do Cart já configuradas.
+Os overrides passaram a usar doAnswer; os dois casos passaram na repetição,
+sem mudar expectativas ou produção. Os 34 casos de StockWorkPersistenceTests
+passaram, incluindo os 14 novos de reconciliação, e os 37 casos anteriores de
+SnapshotCheckoutPersistenceTests passaram. Uma tentativa ficou bloqueada pela
+cache Gradle fora do workspace e foi repetida com autorização.
+
+A suíte final completa com PostgreSQL aprovou **282 testes**, zero falhas/erros
+e **12 casos opt-in ignorados**, todos de CheckoutFlowIntegrationTests
+(294 casos no XML). Inclui os 46 casos novos e as regressões de checkout,
+persistência, aplicação e clientes. O código de produção compilou sem ajustes
+após o primeiro conjunto focado; a correção posterior foi restrita aos mocks.
+
+Cobertura acrescentada:
+
+- Servidor HTTP local verifica GET/PUT/abort, somente itens persistidos, token
+  client_credentials/cache/invalidação e ausência de chamadas confirm/release.
+- Validação de envelope ABORTED com null explícito, estados terminais,
+  identidade, itens/duplicados/quantidades, datas, estado e prazo imutável.
+- 400/401/403/404/409/5xx/redirects, autenticação no token endpoint, timeout real
+  de leitura, timeouts/URL inválidos e ausência de retry explícito no cliente.
+- Com PostgreSQL real e cliente Inventory simulado: espera por COMPLETED do
+  Cart, HTTP fora até de transação externa, resposta PUT perdida e reinício,
+  rejeição/GET ausente/aborto comprovado, vencedor concorrente, falhas técnicas,
+  prazo aparentemente vencido e aborto decidido pelo Inventory.
+- ABORT_PENDING após timeout/reinício, conflito/revisão, CONFIRMED inesperado,
+  resposta ACTIVE depois da decisão de aborto, decisão entre GET e PUT e falha
+  do commit local após sucesso remoto sem nova identidade de reserva.
+- Cem produtos num pedido/trabalho único; 101 geram 409 e aborto durável do
+  Cart antes de Catalog/pedido/Inventory. Replay não cria trabalho nem pedido.
+
+Sem nova migration ou alteração de V1–V5, Gateway, Inventory ou Keycloak. Os
+schemas PostgreSQL são temporários e exclusivos. Não foram habilitados os
+cenários opt-in com JARs reais do checkout, token real Keycloak ou a integração
+com Inventory real da 55. Não há worker de estoque novo nesta etapa.

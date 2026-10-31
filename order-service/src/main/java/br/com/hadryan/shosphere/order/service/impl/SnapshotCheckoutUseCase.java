@@ -102,6 +102,7 @@ public class SnapshotCheckoutUseCase implements CreateOrderUseCase {
             }
         }
         var ready = intent;
+        if (ready.items().size() > 100) return abortOrReplay(ready, CheckoutFailureReason.PRODUCT_CONFLICT);
         List<ProductResponse> products;
         try {
             products = remote(ready, () -> fetchProducts(ready));

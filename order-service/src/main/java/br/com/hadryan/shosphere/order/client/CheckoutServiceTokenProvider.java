@@ -5,6 +5,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import br.com.hadryan.shosphere.order.model.enums.CheckoutRetryCategory;
 import java.time.Instant;
 
@@ -42,6 +43,9 @@ public class CheckoutServiceTokenProvider {
             return "Bearer " + token;
         } catch (ResourceAccessException failure) {
             throw new CheckoutIntegrationFailure(503, CheckoutRetryCategory.UPSTREAM_UNAVAILABLE);
+        } catch (RestClientResponseException failure) {
+            int status = failure.getStatusCode().value();
+            throw new CheckoutIntegrationFailure(502, CheckoutRetryCategory.UPSTREAM_REJECTED, status == 401 || status == 403);
         } catch (RestClientException failure) {
             throw new CheckoutIntegrationFailure(502, CheckoutRetryCategory.UPSTREAM_REJECTED);
         }

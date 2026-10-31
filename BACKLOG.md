@@ -153,7 +153,13 @@ PostgreSQL; 80 testes focados aprovados, sem falhas ou ignorados.
 Detalhes em [order-service/STOCK_PERSISTENCE.md](order-service/STOCK_PERSISTENCE.md)
 e validação completa em [order-service/TESTING.md](order-service/TESTING.md).
 Sem cliente Inventory, worker ou mudança no formato público nesta etapa.
-A próxima é a **53 — Implementar cliente e fluxo Order–Inventory**.
+A microtarefa **53 — Implementar cliente e fluxo Order–Inventory** foi concluída:
+RestClient com token de serviço, timeouts e validação estrita, reconciliação
+explícita com HTTP fora de transações de banco, prova de aborto e limite de cem produtos no
+checkout por snapshot. Sem nova migration ou agendamento de estoque.
+Detalhes em [order-service/STOCK_FLOW.md](order-service/STOCK_FLOW.md) e resultados
+em [order-service/TESTING.md](order-service/TESTING.md).
+A próxima é a **54 — Agendar reserva, monitoramento e compensação**.
 
 ## Validação PostgreSQL
 

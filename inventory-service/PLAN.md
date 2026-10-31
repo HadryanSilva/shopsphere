@@ -210,8 +210,9 @@ replay e política interna de role/azp existente. HTTP com PostgreSQL, validaç�
 JWT e isolamento no Gateway foram validados; detalhes em
 [ABORT_API.md](ABORT_API.md) e [TESTING.md](TESTING.md). Sem nova migration.
 A etapa 52 foi concluída no Order: [trabalho e transições locais](../order-service/STOCK_PERSISTENCE.md).
-A próxima é a 53, cliente e fluxo Order–Inventory; recuperação e validação
-integrada continuam nas 54–55.
+A etapa 53 acrescentou [cliente e reconciliação explícita no Order](../order-service/STOCK_FLOW.md).
+A próxima é a 54, agendamento de reserva/monitoramento/compensação;
+a validação integrada continua na 55.
 
 Antes de alterar Order/Cart, definir transporte e identidade entre serviços,
 ordem de persistência/reserva, timeouts, respostas ambíguas e compensação após
