@@ -5,6 +5,7 @@ import br.com.hadryan.shosphere.order.model.*;
 import br.com.hadryan.shosphere.order.model.enums.*;
 import br.com.hadryan.shosphere.order.repository.CheckoutIntentRepository;
 import br.com.hadryan.shosphere.order.repository.OrderRepository;
+import br.com.hadryan.shosphere.order.repository.StockWorkRepository;
 import lombok.RequiredArgsConstructor;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -26,6 +27,7 @@ import java.util.Optional;
 public class CheckoutIntentTransaction {
     private final CheckoutIntentRepository intents;
     private final OrderRepository orders;
+    private final StockWorkRepository stockWork;
     @PersistenceContext
     private EntityManager entityManager;
     @Value("#{T(java.time.Duration).parse('${checkout.snapshot.recovery.initial-backoff:PT60S}')}")
@@ -133,6 +135,7 @@ public class CheckoutIntentTransaction {
         entityManager.refresh(saved);
         intent.orderPersisted(saved.getId());
         intents.flush();
+        stockWork.saveAndFlush(StockWork.waiting(saved.getId(), intent.getCheckoutId()));
         return OrderResponse.fromOrder(saved);
     }
 

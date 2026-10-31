@@ -145,7 +145,15 @@ replay, validação e política JWT/role/azp existente. HTTP com PostgreSQL e
 isolamento no Gateway validados. Sem nova migration ou integração com Order.
 Contrato e resultados em [inventory-service/ABORT_API.md](inventory-service/ABORT_API.md)
 e [inventory-service/TESTING.md](inventory-service/TESTING.md).
-A próxima é a **52 — Persistir trabalho de estoque e transições no Order**.
+A microtarefa **52 — Persistir trabalho de estoque e transições no Order**
+foi concluída: nova V5, trabalho único por pedido junto ao commit do checkout
+por snapshot, fases/decisão/observação/agenda e transições locais atômicas com
+o status público. Reinício, rollback, replay e concorrência validados com
+PostgreSQL; 80 testes focados aprovados, sem falhas ou ignorados.
+Detalhes em [order-service/STOCK_PERSISTENCE.md](order-service/STOCK_PERSISTENCE.md)
+e validação completa em [order-service/TESTING.md](order-service/TESTING.md).
+Sem cliente Inventory, worker ou mudança no formato público nesta etapa.
+A próxima é a **53 — Implementar cliente e fluxo Order–Inventory**.
 
 ## Validação PostgreSQL
 

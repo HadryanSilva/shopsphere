@@ -59,6 +59,10 @@ inclusive a precisão de updatedAt, para coincidir com o replay após reinício.
 Uma intenção com pedido já gravado devolve o pedido persistido, preservando os
 snapshots financeiros. Não recalcula preços nem substitui itens nesse replay.
 
+Na microtarefa 52, esse mesmo commit passou a gravar também trabalho de estoque
+WAITING_CART para pedidos novos por snapshot. Detalhes e limites em
+[STOCK_PERSISTENCE.md](STOCK_PERSISTENCE.md); V4 permanece intacta.
+
 A intenção bloqueada serializa aborto versus criação: ABORT_PENDING impede
 gravação tardia, e COMPLETION_PENDING impede aborto. Repetições equivalentes de
 preparação/conclusão/aborto não modificam timestamps. Registros ABORTED continuam

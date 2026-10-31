@@ -209,8 +209,9 @@ A microtarefa 51 expôs o POST de aborto com DTO ABORTED, null explícito,
 replay e política interna de role/azp existente. HTTP com PostgreSQL, validação,
 JWT e isolamento no Gateway foram validados; detalhes em
 [ABORT_API.md](ABORT_API.md) e [TESTING.md](TESTING.md). Sem nova migration.
-A próxima é a 52: persistir trabalho de estoque e transições no Order;
-a ligação HTTP e recuperação continuam nas 53–55.
+A etapa 52 foi concluída no Order: [trabalho e transições locais](../order-service/STOCK_PERSISTENCE.md).
+A próxima é a 53, cliente e fluxo Order–Inventory; recuperação e validação
+integrada continuam nas 54–55.
 
 Antes de alterar Order/Cart, definir transporte e identidade entre serviços,
 ordem de persistência/reserva, timeouts, respostas ambíguas e compensação após

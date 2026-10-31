@@ -491,3 +491,58 @@ JWT, aquisição de token e agendamento reais. O emissor/JWKS/token endpoint e o
 proxies de falhas pertencem ao harness. Não houve consulta/provisionamento do
 Keycloak real ou login do frontend. Sem novas migrations/dependências e sem
 ativação do modo snapshot no ambiente normal.
+
+## Trabalho de estoque e transições locais — microtarefa 52
+
+Modelo, constraints, transações e limites em [STOCK_PERSISTENCE.md](STOCK_PERSISTENCE.md).
+Executados no diretório order-service:
+
+```powershell
+.\gradlew.bat compileTestJava --offline --no-daemon
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*StockWorkTests' --tests '*StockWorkPersistenceTests' --tests '*CheckoutIntentPersistenceTests' --tests '*SnapshotCheckoutPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+O conjunto focado aprovou **80 testes**, zero falhas/erros/ignorados: seis de
+domínio, 20 novos com PostgreSQL e 54 existentes de intenção/checkout.
+A primeira compilação dos testes novos encontrou ambiguidade do import Order;
+foi corrigida com import explícito. A primeira execução encontrou uma consulta
+de teste ao tipo concreto de um serviço com proxy JDK; passou a usar a interface.
+A repetição completa do conjunto focado passou, sem relaxar expectativas.
+Na primeira suíte completa, os sete testes de aplicação sem datasource
+precisavam simular também StockWorkTransaction. O mock foi acrescentado junto
+ao de CheckoutIntentTransaction; o fluxo público real e suas expectativas
+permanecem nos testes. A suíte foi reexecutada após esse ajuste.
+A execução final completa com PostgreSQL aprovou **236 testes**, zero
+falhas/erros e **12 casos opt-in ignorados**, todos de CheckoutFlowIntegrationTests
+(248 casos no XML). Inclui os 26 casos novos e os sete testes de aplicação
+corrigidos. Não foi necessário alterar código de produção após os testes focados.
+O acesso à cache Gradle fora do workspace exigiu autorização; nenhuma
+configuração global foi alterada.
+
+Cobertura nova:
+
+- Upgrade V4–V5, Flyway repetido sem reaplicação e Hibernate validate; pedidos
+  existentes e o fluxo anterior não recebem trabalho automaticamente.
+- Pedido/itens, COMPLETION_PENDING e WAITING_CART no mesmo commit; erro no
+  insert do trabalho reverte tudo, com nova tentativa posterior válida.
+- Replay único por pedido, snapshot com cem itens, reinício com decisão,
+  observação e metadados de tentativa preservados e elegibilidade recuperada
+  a partir de COMPLETED do Cart sem callback em memória.
+- ACTIVE validado para PENDING_PAYMENT; RELEASED/EXPIRED ou prova de aborto
+  para CANCELLED, sem mudar valores/itens/endereço/origem ou paymentStatus.
+- ACTIVE com prazo passado não cancela por relógio local; falhas transitórias
+  mantêm status. ABORT_PENDING preserva a primeira razão e rejeita ACTIVE tardio.
+- Identidade/itens/duplicados/datas/prazo renovado e CONFIRMED inesperado exigem
+  revisão; reserva conhecida com prova null não produz cancelamento falso.
+- Rollback conjunto da observação/status público em falhas de constraint;
+  concorrência de criação/replay, aborto/ACTIVE e prova terminal/ACTIVE.
+- Constraints de estado/agenda/observação/contador/versão, PK/FKs e versão
+  otimista impedindo gravação de entidade desatualizada.
+
+As migrations usam apenas schemas temporários exclusivos dos testes. Não há
+cliente Inventory, chamadas remotas, worker novo ou integração real de estoque
+nesta entrega; as transições locais são chamadas explicitamente pelos testes.
+O limite de cem produtos no checkout pertence à 53. Os cenários opt-in com
+JARs/HTTP do checkout entre serviços não foram habilitados nesta execução.
