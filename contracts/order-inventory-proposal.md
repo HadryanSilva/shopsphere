@@ -173,7 +173,8 @@ intenção continua significando Cart concluído e não deve impedir a agenda de
 estoque. As fases abaixo foram implementadas na microtarefa 52, como transições
 locais em [STOCK_PERSISTENCE.md](../order-service/STOCK_PERSISTENCE.md).
 O cliente e a reconciliação explícita foram implementados na 53, em
-[STOCK_FLOW.md](../order-service/STOCK_FLOW.md). A execução agendada pertence à 54:
+[STOCK_FLOW.md](../order-service/STOCK_FLOW.md). A execução agendada foi implementada
+na [54](../order-service/STOCK_RECOVERY.md):
 
 | Trabalho | Comportamento e efeito público proposto |
 |---|---|
@@ -264,7 +265,7 @@ pedido já cancelado. Dados financeiros não são revalidados durante recuperaç
 | 51 | Expor aborto durável no Inventory | Concluída: POST/DTO/allowlist internos, replay 200 com null explícito ou reserva terminal, validação/erros e JWT. HTTP com PostgreSQL e isolamento no Gateway validados; contratos existentes e V1–V5 preservados. Detalhes em ABORT_API.md e TESTING.md do Inventory. |
 | 52 | Persistir trabalho de estoque e transições no Order | Concluída: V5 e trabalho único criado no commit do pedido por snapshot, fases/decisão/observação/agenda e transições locais atômicas com o estado público. Oitenta testes focados com PostgreSQL aprovados, incluindo rollback/reinício/corridas; sem cliente HTTP ou worker. Detalhes em STOCK_PERSISTENCE.md e TESTING.md do Order. |
 | 53 | Implementar cliente e fluxo Order–Inventory | Concluída: limite de cem produtos no checkout por snapshot com aborto durável do Cart, cliente interno com token de serviço/timeouts e validações, reconciliação explícita e matriz de recuperação. HTTP fora de transações; sem worker novo ou migration. Detalhes em STOCK_FLOW.md e TESTING.md do Order. |
-| 54 | Agendar reserva, monitoramento e compensação | Lotes/backoff/claims, cooperação com conclusão Cart, expiração e alertas; retomada sem JWT público e sem duplicar efeitos. |
+| 54 | Agendar reserva, monitoramento e compensação | Concluída: worker com lotes/SKIP LOCKED, V6 de claims/lease e avisos, backoff, monitoramento e cooperação com conclusão durável do Cart. Retomada sem JWT público; transições e aborto remoto preservam segurança após lease vencido. Detalhes em STOCK_RECOVERY.md e TESTING.md do Order. |
 | 55 | Validar integração e documentar operação | JARs reais incluindo Inventory, schemas isolados, falhas após cada commit/HTTP e respostas perdidas; tokens reais quando disponíveis, limitações explícitas. |
 
 Os números são proposta, a reconfirmar no início de cada entrega. Não executar

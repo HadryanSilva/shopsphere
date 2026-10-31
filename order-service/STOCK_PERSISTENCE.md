@@ -83,5 +83,6 @@ Testes: StockWorkTests e StockWorkPersistenceTests; comandos/resultados em
 Na entrega 52, não havia cliente Inventory, chamadas HTTP, limite de 100 produtos no checkout,
 worker, claims/lease, cálculo de backoff ou ativação automática das transições
 nessa etapa. Cliente, limite e reconciliação explícita foram acrescentados na
-[53](STOCK_FLOW.md); worker/claims/backoff continuam na 54 e integração real
-na 55. A entrega 52 não alterou API, segurança, dependências ou Keycloak.
+[53](STOCK_FLOW.md); worker/claims/backoff foram acrescentados na
+[54](STOCK_RECOVERY.md), com V6. A integração real continua na 55.
+A entrega 52 não alterou API, segurança, dependências ou Keycloak.

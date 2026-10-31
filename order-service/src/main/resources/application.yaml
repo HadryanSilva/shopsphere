@@ -5,6 +5,15 @@ services:
 stock:
   connect-timeout: ${SHOPSPHERE_STOCK_CONNECT_TIMEOUT:2000}
   read-timeout: ${SHOPSPHERE_STOCK_READ_TIMEOUT:5000}
+  recovery:
+    enabled: ${SHOPSPHERE_STOCK_RECOVERY_ENABLED:true}
+    interval: ${SHOPSPHERE_STOCK_RECOVERY_INTERVAL:PT60S}
+    batch-size: ${SHOPSPHERE_STOCK_RECOVERY_BATCH_SIZE:50}
+    lease: ${SHOPSPHERE_STOCK_RECOVERY_LEASE:PT60S}
+    initial-backoff: ${SHOPSPHERE_STOCK_INITIAL_BACKOFF:PT60S}
+    max-backoff: ${SHOPSPHERE_STOCK_MAX_BACKOFF:PT15M}
+    monitor-interval: ${SHOPSPHERE_STOCK_MONITOR_INTERVAL:PT60S}
+    warn-after: ${SHOPSPHERE_STOCK_WARN_AFTER:PT15M}
 
 checkout:
   snapshot:

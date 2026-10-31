@@ -602,3 +602,62 @@ Sem nova migration ou alteração de V1–V5, Gateway, Inventory ou Keycloak. Os
 schemas PostgreSQL são temporários e exclusivos. Não foram habilitados os
 cenários opt-in com JARs reais do checkout, token real Keycloak ou a integração
 com Inventory real da 55. Não há worker de estoque novo nesta etapa.
+
+## Agendamento de estoque — microtarefa 54
+
+Configuração, claims, backoff e limites em [STOCK_RECOVERY.md](STOCK_RECOVERY.md).
+Executados no diretório order-service:
+
+```powershell
+.\gradlew.bat compileTestJava --offline --no-daemon
+.\gradlew.bat test --offline --no-daemon --tests '*StockRecoveryJobTests' --tests '*StockWorkTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*StockRecoveryJobTests' --tests '*StockWorkTests' --tests '*StockWorkPersistenceTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+A repetição focada aprovou **60 testes**, zero falhas/erros/ignorados: 48 de
+persistência, seis existentes de domínio e seis do worker. A execução inicial
+dos testes de configuração precisou de EntityManagerFactory simulado para a
+injeção anotada do mock transacional. A verificação de inatividade passou a
+verificar ausência de despacho/scan, sem contar o callback de inicialização do
+mock como execução de trabalho. A verificação de capacidade usa corePoolSize,
+pois poolSize mede threads já iniciadas; não foi reduzida a expectativa de duas
+threads. Os mesmos cenários passaram após corrigir o contexto dos testes.
+
+A suíte final completa com PostgreSQL aprovou **302 testes**, zero falhas/erros
+e **12 casos opt-in ignorados**, todos de CheckoutFlowIntegrationTests
+(314 casos no XML). Inclui os 20 casos novos, a fixture final do upgrade V5–V6
+com itens/origem e as regressões de checkout, clientes, segurança e aplicação.
+
+Cobertura nova com PostgreSQL:
+
+- V5 com pedido/itens/intenção e trabalho ABORT_PENDING preservado ao aplicar
+  apenas V6; metadados novos começam null, Flyway valida e Hibernate validate
+  aceita as colunas novas. V1–V5 permanecem intactas.
+- Claim independente de nextAttemptAt, exclusão de leases/tentativas futuras,
+  reinício, apenas um vencedor entre claims concorrentes, SKIP LOCKED e
+  conclusão antiga incapaz de liberar o claim do novo dono.
+- WAITING_CART não chama Inventory nem gasta TTL; o worker avança após
+  COMPLETED persistido, sem replay público e depois de reinício.
+- Backoff 60/120/240/480/900/900 segundos, contador durável sem abandono,
+  monitoramento antecipado por expiresAt e retry de RESERVED limitado a 60s.
+- Reserva observada como vencida vai a ABORT_PENDING; timeout/reinício repetem
+  abort até prova terminal, sem PUT novo nem cancelamento por relógio local.
+- Falha no primeiro trabalho não bloqueia o lote seguinte; consultas de revisão
+  e avisos ficam limitados mesmo após reinício, com decisão de aborto preservada.
+- Falha ao liberar o claim reverte contador/agenda e deixa o lease recuperável;
+  fallback registra PERSISTENCE_FAILURE sem contar duas vezes falha já gravada.
+- Worker pausado no PUT perde o lease; outro decide/obtém aborto, e a chamada
+  antiga encontra a barreira simulada. CLOSED/CANCELLED não são desfeitos.
+
+StockRecoveryJobTests também exercita agendamento real com uma thread ocupada,
+flags de ativação, configuração inválida, isolamento de falhas e logs sem texto
+de exceção/SQL/downstream ou stack trace. As transições continuam sem HTTP sob
+transação, conforme os cenários existentes da etapa 53.
+
+Os testes PostgreSQL usam schemas temporários exclusivos. O Inventory é
+simulado nos testes do worker; a barreira real pertence ao código testado nas
+50–51 e à integração de processos da 55. Não foi habilitado o opt-in de JARs
+reais do checkout ou token real do Keycloak nesta entrega. Nenhuma migration
+foi aplicada a dados de uso normal, banco remoto ou compartilhado.

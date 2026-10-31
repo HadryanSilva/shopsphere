@@ -159,7 +159,13 @@ explícita com HTTP fora de transações de banco, prova de aborto e limite de c
 checkout por snapshot. Sem nova migration ou agendamento de estoque.
 Detalhes em [order-service/STOCK_FLOW.md](order-service/STOCK_FLOW.md) e resultados
 em [order-service/TESTING.md](order-service/TESTING.md).
-A próxima é a **54 — Agendar reserva, monitoramento e compensação**.
+A microtarefa **54 — Agendar reserva, monitoramento e compensação** foi concluída:
+worker condicionado ao modo snapshot, claims/lease duráveis com V6, seleção
+SKIP LOCKED, backoff, monitoramento e avisos limitados entre reinícios.
+HTTP continua fora de transações; retomadas preservam a decisão de aborto.
+Detalhes em [order-service/STOCK_RECOVERY.md](order-service/STOCK_RECOVERY.md)
+e resultados em [order-service/TESTING.md](order-service/TESTING.md).
+A próxima é a **55 — Validar integração e documentar operação**.
 
 ## Validação PostgreSQL
 

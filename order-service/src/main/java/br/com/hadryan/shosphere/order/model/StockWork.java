@@ -28,6 +28,9 @@ public class StockWork {
     private Instant reservationExpiresAt;
     private Instant reservationUpdatedAt;
     private Instant nextAttemptAt;
+    private UUID claimToken;
+    private Instant claimedUntil;
+    private Instant lastWarningAt;
     @Column(nullable = false)
     private long attemptCount;
     @Enumerated(EnumType.STRING) @Column(length = 40)
@@ -134,6 +137,25 @@ public class StockWork {
         lastFailureCategory = category;
         updatedAt = now();
     }
+
+    public void claim(UUID token, Instant until) {
+        if (phase == StockWorkPhase.CLOSED) throw new IllegalStateException("Stock work is closed");
+        claimToken = Objects.requireNonNull(token);
+        claimedUntil = micros(Objects.requireNonNull(until));
+    }
+
+    public boolean ownsClaim(UUID token) { return token != null && token.equals(claimToken); }
+
+    public void releaseClaim() {
+        claimToken = null;
+        claimedUntil = null;
+    }
+
+    public void schedule(Instant nextAttemptAt) {
+        if (phase != StockWorkPhase.CLOSED) this.nextAttemptAt = micros(Objects.requireNonNull(nextAttemptAt));
+    }
+
+    public void warned(Instant at) { lastWarningAt = micros(Objects.requireNonNull(at)); }
 
     private void close() {
         phase = StockWorkPhase.CLOSED;

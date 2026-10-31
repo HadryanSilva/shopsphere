@@ -77,11 +77,11 @@ Cart concluído não é reaberto após rejeição/expiração de estoque.
 
 ## Limites e validação
 
-Esta etapa fornece o cliente e a operação retomável; não liga resume ao POST,
-replay público ou ao job do Cart. O worker de estoque, claims/lease, cálculo
-de backoff e avisos pertencem à 54. Enquanto isso, falhas/monitoramento recebem
-agenda local de 60 segundos; a seleção pela agenda será responsabilidade do
-worker. Não há execução automática de estoque nesta entrega.
+Esta etapa forneceu o cliente e a operação retomável, sem ligar resume ao POST,
+replay público ou ao job do Cart. Na [54](STOCK_RECOVERY.md), um worker separado
+passou a chamar resume, com claims/lease, backoff e avisos duráveis. A agenda
+fixa de 60 segundos usada inicialmente na 53 foi substituída pela política de
+monitoramento/retry da 54; a resposta pública inicial continua independente.
 
 Sem nova migration: V1–V5 e os enums/contratos externos permanecem intactos.
 Não houve mudança de Gateway, Inventory, Keycloak ou ativação do modo snapshot.

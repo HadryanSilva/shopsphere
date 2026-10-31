@@ -20,7 +20,7 @@ public class StockReservationFlow {
     private final StockWorkTransaction transaction;
     private final InventoryReservationClient inventory;
 
-    // Explicitly resumed by the scheduler in the next delivery; never on the initial checkout request.
+    // Resumed by the stock scheduler; never on the initial checkout request.
     public StockWorkSnapshot resume(UUID orderId) {
         var work = transaction.cartCompleted(orderId);
         try {
@@ -37,10 +37,10 @@ public class StockReservationFlow {
         } catch (StockIntegrationFailure failure) {
             if (failure.category() == StockFailureCategory.INVALID_UPSTREAM_RESPONSE)
                 return transaction.review(orderId, failure.category());
-            return transaction.recordFailure(orderId, work.phase(), failure.category(), nextAttempt());
+            return transaction.retry(orderId, work.phase(), failure.category());
         } catch (DataAccessException failure) {
             // If even this bookkeeping is unavailable, the caller retains the durable work for another pass.
-            return transaction.recordFailure(orderId, work.phase(), StockFailureCategory.PERSISTENCE_FAILURE, nextAttempt());
+            return transaction.retry(orderId, work.phase(), StockFailureCategory.PERSISTENCE_FAILURE);
         }
     }
 
@@ -63,7 +63,7 @@ public class StockReservationFlow {
     }
 
     private StockWorkSnapshot observe(StockWorkSnapshot work, StockReservationObservation observation) {
-        var current = transaction.observe(work.orderId(), observation, nextAttempt());
+        var current = transaction.observeForMonitoring(work.orderId(), observation);
         if (current.phase() == StockWorkPhase.ABORT_PENDING) return abort(current);
         if (current.phase() == StockWorkPhase.RESERVED && !observation.expiresAt().isAfter(Instant.now()))
             return abort(transaction.requestAbort(work.orderId(), StockWorkReason.RESERVATION_EXPIRED));
@@ -79,9 +79,8 @@ public class StockReservationFlow {
         } catch (StockIntegrationFailure failure) {
             if (failure.category() == StockFailureCategory.INVALID_UPSTREAM_RESPONSE)
                 return transaction.review(current.orderId(), failure.category());
-            return transaction.recordFailure(current.orderId(), StockWorkPhase.ABORT_PENDING, failure.category(), nextAttempt());
+            return transaction.retry(current.orderId(), StockWorkPhase.ABORT_PENDING, failure.category());
         }
     }
 
-    private Instant nextAttempt() { return Instant.now().plusSeconds(60); }
 }

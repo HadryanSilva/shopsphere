@@ -211,8 +211,8 @@ JWT e isolamento no Gateway foram validados; detalhes em
 [ABORT_API.md](ABORT_API.md) e [TESTING.md](TESTING.md). Sem nova migration.
 A etapa 52 foi concluída no Order: [trabalho e transições locais](../order-service/STOCK_PERSISTENCE.md).
 A etapa 53 acrescentou [cliente e reconciliação explícita no Order](../order-service/STOCK_FLOW.md).
-A próxima é a 54, agendamento de reserva/monitoramento/compensação;
-a validação integrada continua na 55.
+A etapa 54 acrescentou [recuperação agendada no Order](../order-service/STOCK_RECOVERY.md).
+A próxima é a 55, validação integrada com Inventory e documentação de operação.
 
 Antes de alterar Order/Cart, definir transporte e identidade entre serviços,
 ordem de persistência/reserva, timeouts, respostas ambíguas e compensação após

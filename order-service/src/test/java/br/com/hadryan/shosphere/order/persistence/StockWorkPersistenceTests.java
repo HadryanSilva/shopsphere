@@ -31,6 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -45,6 +46,7 @@ class StockWorkPersistenceTests {
     private final UUID customer = UUID.randomUUID(), key = UUID.randomUUID(), cart = UUID.randomUUID(), product = UUID.randomUUID();
     private final UUID existingOrder = UUID.randomUUID();
     private final InventoryReservationClient inventory = mock(InventoryReservationClient.class);
+    private final Map<String, Object> operationalProperties = new HashMap<>();
     private final Instant created = Instant.parse("2026-10-30T12:00:00Z"), expires = created.plusSeconds(900);
 
     @BeforeEach void setUp() {
@@ -68,7 +70,9 @@ class StockWorkPersistenceTests {
 
     private void openContext() {
         context = new AnnotationConfigApplicationContext();
-        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("stock-flow-test", Map.of("checkout.snapshot.enabled", "true")));
+        var properties = new HashMap<String, Object>(operationalProperties);
+        properties.put("checkout.snapshot.enabled", "true");
+        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("stock-flow-test", properties));
         context.registerBean(InventoryReservationClient.class, () -> inventory);
         context.registerBean(DataSource.class, () -> dataSource);
         context.registerBean("entityManagerFactory", LocalContainerEntityManagerFactoryBean.class, () -> {
@@ -122,7 +126,7 @@ class StockWorkPersistenceTests {
     private void sql(String sql) { jdbc.execute(sql.replace("$schema", schema)); }
 
     @Test void upgradeDoesNotEnrollExistingOrPreviousCreationFlow() {
-        assertEquals("5", flyway(null).info().current().getVersion().getVersion());
+        assertEquals("6", flyway(null).info().current().getVersion().getVersion());
         assertEquals(0, flyway(null).migrate().migrationsExecuted);
         assertEquals(0, count("stock_work"));
         assertEquals(new BigDecimal("25.00"), response(existingOrder).totalAmount());
@@ -303,7 +307,8 @@ class StockWorkPersistenceTests {
         var id = ready();
         for (var change : List.of("attempt_count = -1", "version = -1", "phase = 'UNKNOWN'", "phase = 'RESERVED'",
                 "phase = 'CLOSED', next_attempt_at = NULL", "phase = 'ABORT_PENDING'", "next_attempt_at = NULL",
-                "last_failure_category = 'secret'", "reservation_status = 'ACTIVE'", "abort_requested = TRUE"))
+                "last_failure_category = 'secret'", "reservation_status = 'ACTIVE'", "abort_requested = TRUE",
+                "claim_token = '" + UUID.randomUUID() + "'", "claimed_until = CURRENT_TIMESTAMP"))
             assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
                     () -> sql("UPDATE $schema.stock_work SET " + change + " WHERE order_id = '" + id + "'"));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
@@ -506,6 +511,279 @@ class StockWorkPersistenceTests {
         sql("ALTER TABLE $schema.orders DROP CONSTRAINT reject_flow_payment");
         assertEquals(StockWorkPhase.RESERVED, flow().resume(id).phase());
         verify(inventory, never()).reserve(any());
+    }
+
+    private StockRecoveryJob recovery(int batch) {
+        return new StockRecoveryJob(stock(), flow(), batch, Duration.ofSeconds(60), Duration.ofMinutes(15),
+                Duration.ofSeconds(60), Duration.ofSeconds(60));
+    }
+
+    @Test void upgradeV5PreservesExistingWorkAndAddsUnclaimedLeaseAndWarningMetadata() {
+        var previousSchema = schema;
+        var upgradeSchema = "stock_upgrade_test_" + UUID.randomUUID().toString().replace("-", "");
+        var id = UUID.randomUUID(); var checkoutId = UUID.randomUUID();
+        context.close();
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(upgradeSchema).defaultSchema(upgradeSchema)
+                    .locations("classpath:db/migration").target("5").load().migrate();
+            jdbc.update("INSERT INTO " + upgradeSchema + ".orders(id,customer_id,source_cart_id,total_amount,subtotal) VALUES (?,?,?,25,25)", id, customer, cart);
+            jdbc.update("INSERT INTO " + upgradeSchema + ".order_items(id,order_id,product_id,product_name,quantity,unit_price,line_total) VALUES (?,?,?,'Snapshot',2,12.50,25)",
+                    UUID.randomUUID(), id, product);
+            jdbc.update("INSERT INTO " + upgradeSchema + ".checkout_intents(checkout_id,customer_id,idempotency_key,status,"
+                    + "shipping_recipient,shipping_address_line,shipping_city,shipping_postal_code,shipping_country_code,"
+                    + "cart_id,order_id,created_at,updated_at) VALUES (?,?,?,'COMPLETED','Customer','Street','Lisbon','1000-001','PT',?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                    checkoutId, customer, key.toString(), cart, id);
+            jdbc.update("INSERT INTO " + upgradeSchema + ".checkout_intent_items(checkout_id,product_id,quantity) VALUES (?,?,2)", checkoutId, product);
+            jdbc.update("INSERT INTO " + upgradeSchema + ".stock_work(order_id,checkout_id,phase,abort_requested,reason,"
+                    + "next_attempt_at,attempt_count,created_at,updated_at) VALUES (?,?,'ABORT_PENDING',true,'RESERVATION_REJECTED',CURRENT_TIMESTAMP,3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", id, checkoutId);
+            var upgraded = Flyway.configure().dataSource(dataSource).schemas(upgradeSchema).defaultSchema(upgradeSchema)
+                    .locations("classpath:db/migration").load();
+            assertEquals(1, upgraded.migrate().migrationsExecuted);
+            assertTrue(upgraded.validateWithResult().validationSuccessful);
+            schema = upgradeSchema; openContext(); // Validate new entity columns against the upgraded schema.
+            var work = stock().get(id);
+            assertEquals(StockWorkPhase.ABORT_PENDING, work.phase());
+            assertTrue(work.abortRequested()); assertEquals(3, work.attemptCount());
+            assertEquals(StockWorkReason.RESERVATION_REJECTED, work.reason());
+            assertEquals(List.of(new StockWorkSnapshot.Item(product, 2)), work.items());
+            assertEquals(new BigDecimal("25.00"), response(id).totalAmount());
+            var metadata = jdbc.queryForMap("SELECT claim_token,claimed_until,last_warning_at FROM " + upgradeSchema + ".stock_work WHERE order_id = ?", id);
+            assertTrue(metadata.values().stream().allMatch(Objects::isNull));
+            assertTrue(stock().claim(id, Instant.now(), Duration.ofSeconds(60)).isPresent());
+        } finally {
+            if (context != null) context.close();
+            schema = previousSchema;
+            if (!upgradeSchema.matches("stock_upgrade_test_[0-9a-f]{32}")) throw new IllegalStateException("Invalid upgrade test schema");
+            jdbc.execute("DROP SCHEMA IF EXISTS " + upgradeSchema + " CASCADE");
+        }
+    }
+    private void makeDue(UUID id) { sql("UPDATE $schema.stock_work SET next_attempt_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE order_id = '" + id + "'"); }
+    private UUID otherReady() {
+        var anotherKey = UUID.randomUUID();
+        var intent = checkout().start(customer, anotherKey, address());
+        checkout().prepared(intent.checkoutId(), UUID.randomUUID(), List.of(new CheckoutIntentItem(product, 2)));
+        var order = Order.create(customer, anotherKey, "EUR", address());
+        order.addItem(product, "Other snapshot", new BigDecimal("12.50"), 2);
+        var id = checkout().persistOrder(intent.checkoutId(), order).id();
+        checkout().completed(intent.checkoutId()); stock().cartCompleted(id);
+        return id;
+    }
+
+    @Test void durableClaimIsIndependentOfAgendaAndSurvivesRestartWithFencedCompletion() {
+        var id = ready(); var now = Instant.now();
+        var agenda = stock().get(id).nextAttemptAt();
+        var first = stock().claim(id, now, Duration.ofSeconds(60)).orElseThrow();
+        assertEquals(agenda, stock().get(id).nextAttemptAt());
+        assertTrue(stock().due(now.plusSeconds(1), 50).isEmpty());
+        assertTrue(stock().claim(id, now.plusSeconds(1), Duration.ofSeconds(60)).isEmpty());
+        context.close(); openContext();
+        assertTrue(stock().due(now.plusSeconds(1), 50).isEmpty());
+        var next = stock().claim(id, now.plusSeconds(61), Duration.ofSeconds(60)).orElseThrow();
+        assertNotEquals(first.token(), next.token());
+        assertTrue(stock().finish(first, true, now.plusSeconds(62), Duration.ofMinutes(15)).isEmpty());
+        assertEquals(next.token(), jdbc.queryForObject("SELECT claim_token FROM " + schema + ".stock_work WHERE order_id = ?", UUID.class, id));
+        var result = stock().finish(next, false, now.plusSeconds(62), Duration.ofMinutes(15)).orElseThrow();
+        assertEquals(0, result.work().attemptCount());
+        assertNull(jdbc.queryForObject("SELECT claim_token FROM " + schema + ".stock_work WHERE order_id = ?", UUID.class, id));
+        assertTrue(stock().due(now.plusSeconds(63), 50).isEmpty());
+    }
+
+    @Test void concurrentClaimsHaveOneWinnerAndSkipLockedRowsAllowOtherWork() throws Exception {
+        var id = ready(); var other = otherReady();
+        try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
+            connection.setAutoCommit(false);
+            statement.executeQuery("SELECT order_id FROM " + schema + ".stock_work WHERE order_id = '" + id + "' FOR UPDATE");
+            try {
+                assertEquals(List.of(other), stock().due(Instant.now().plusSeconds(1), 1));
+                assertTrue(stock().claim(id, Instant.now(), Duration.ofSeconds(60)).isEmpty());
+                assertTrue(stock().claim(other, Instant.now(), Duration.ofSeconds(60)).isPresent());
+            } finally { connection.rollback(); }
+        }
+        var gate = new CyclicBarrier(2);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var attempts = java.util.stream.IntStream.range(0, 2).mapToObj(n -> executor.submit(() -> {
+                gate.await(10, TimeUnit.SECONDS);
+                return stock().claim(id, Instant.now(), Duration.ofSeconds(60));
+            })).toList();
+            int winners = 0;
+            for (var attempt : attempts) if (attempt.get(10, TimeUnit.SECONDS).isPresent()) winners++;
+            assertEquals(1, winners);
+        }
+    }
+
+    @Test void workerWaitsForCartAndRecoversEligibilityAfterRestartWithoutPublicReplay() {
+        var id = persist().id();
+        recovery(50).runOnce();
+        assertEquals(StockWorkPhase.WAITING_CART, stock().get(id).phase());
+        assertTrue(stock().get(id).nextAttemptAt().isAfter(Instant.now()));
+        verifyNoInteractions(inventory);
+        checkout().completed(stock().get(id).checkoutId());
+        context.close(); openContext(); makeDue(id);
+        when(inventory.get(any())).thenThrow(missing());
+        when(inventory.reserve(any())).thenAnswer(call -> active(id));
+        recovery(50).runOnce();
+        assertEquals(StockWorkPhase.RESERVED, stock().get(id).phase());
+        assertEquals(OrderStatus.PENDING_PAYMENT, response(id).status());
+        verify(inventory).reserve(any());
+    }
+
+    @Test void retryBackoffIsDurableCappedAndNeverAbandonsWork() {
+        var id = ready();
+        for (int seconds : new int[]{60, 120, 240, 480, 900, 900}) {
+            var before = Instant.now();
+            var state = stock().retry(id, StockWorkPhase.RESERVE_PENDING, StockFailureCategory.UPSTREAM_UNAVAILABLE);
+            assertFalse(state.nextAttemptAt().isBefore(before.plusSeconds(seconds).minusMillis(1)));
+            assertTrue(state.nextAttemptAt().isBefore(Instant.now().plusSeconds(seconds + 1)));
+            assertEquals(StockWorkPhase.RESERVE_PENDING, state.phase());
+        }
+        assertEquals(6, stock().get(id).attemptCount());
+        context.close(); openContext();
+        assertEquals(6, stock().get(id).attemptCount());
+        assertTrue(stock().due(Instant.now(), 50).isEmpty());
+        makeDue(id); when(inventory.get(any())).thenAnswer(call -> active(id));
+        recovery(50).runOnce();
+        assertEquals(StockWorkPhase.RESERVED, stock().get(id).phase());
+        assertEquals(6, stock().get(id).attemptCount());
+        assertEquals(OrderStatus.PENDING_PAYMENT, response(id).status());
+    }
+
+    @Test void monitorUsesRemoteDeadlineAndCapsTechnicalFailureDelayAtSixtySeconds() {
+        var id = ready();
+        var remote = active(id);
+        var near = new StockReservationObservation(id, remote.status(), remote.items(), remote.createdAt(), remote.createdAt().plusSeconds(30), remote.updatedAt());
+        when(inventory.get(any())).thenReturn(near);
+        recovery(50).runOnce();
+        assertEquals(near.expiresAt(), stock().get(id).nextAttemptAt());
+        assertEquals(OrderStatus.PENDING_PAYMENT, response(id).status());
+        when(inventory.get(any())).thenThrow(new StockIntegrationFailure(0, StockFailureCategory.UPSTREAM_UNAVAILABLE));
+        for (int n = 0; n < 5; n++) {
+            makeDue(id); recovery(50).runOnce();
+            assertEquals(StockWorkPhase.RESERVED, stock().get(id).phase());
+            assertTrue(stock().get(id).nextAttemptAt().isBefore(Instant.now().plusSeconds(61)));
+        }
+        assertEquals(5, stock().get(id).attemptCount());
+        verify(inventory, never()).abort(any());
+    }
+
+    @Test void resumedWorkerAbortsExpiredObservationAndRetriesLostAbortProofAfterRestart() {
+        var id = ready(); observe(id, StockReservationStatus.ACTIVE);
+        when(inventory.get(any())).thenReturn(observation(id, StockReservationStatus.ACTIVE));
+        when(inventory.abort(any())).thenThrow(new StockIntegrationFailure(0, StockFailureCategory.UPSTREAM_UNAVAILABLE))
+                .thenReturn(new InventoryReservationClient.AbortProof(id, observation(id, StockReservationStatus.EXPIRED)));
+        makeDue(id); recovery(50).runOnce();
+        assertEquals(StockWorkPhase.ABORT_PENDING, stock().get(id).phase());
+        assertEquals(OrderStatus.PENDING_PAYMENT, response(id).status());
+        assertEquals(1, stock().get(id).attemptCount());
+        context.close(); openContext(); makeDue(id); recovery(50).runOnce();
+        assertEquals(StockWorkPhase.CLOSED, stock().get(id).phase());
+        assertEquals(OrderStatus.CANCELLED, response(id).status());
+        assertTrue(stock().due(Instant.now().plusSeconds(10000), 50).isEmpty());
+        verify(inventory, never()).reserve(any());
+        verify(inventory, times(1)).get(any());
+    }
+
+    @Test void failedFirstWorkDoesNotStarveLaterBatchesAndFutureAttemptsAreSkipped() {
+        var id = ready(); var other = otherReady();
+        when(inventory.get(any())).thenAnswer(call -> {
+            var work = call.getArgument(0, StockWorkSnapshot.class);
+            if (work.orderId().equals(id)) throw new StockIntegrationFailure(0, StockFailureCategory.AUTHENTICATION_CONFIGURATION);
+            return active(other);
+        });
+        recovery(1).runOnce(); recovery(1).runOnce();
+        assertEquals(1, stock().get(id).attemptCount());
+        assertEquals(StockWorkPhase.RESERVE_PENDING, stock().get(id).phase());
+        assertEquals(StockWorkPhase.RESERVED, stock().get(other).phase());
+        assertTrue(stock().due(Instant.now(), 50).isEmpty());
+        verify(inventory, times(2)).get(any());
+    }
+
+    @Test void reviewQueriesAndOverdueWarningsAreLimitedAcrossRestartWithoutLosingAbortDecision() {
+        var id = ready(); stock().requestAbort(id, StockWorkReason.RESERVATION_REJECTED);
+        stock().review(id, StockFailureCategory.INVALID_UPSTREAM_RESPONSE);
+        sql("UPDATE $schema.stock_work SET created_at = CURRENT_TIMESTAMP - INTERVAL '20 minutes' WHERE order_id = '" + id + "'");
+        var now = Instant.now();
+        var first = stock().claim(id, now, Duration.ofSeconds(60)).orElseThrow();
+        var warning = stock().finish(first, false, now, Duration.ofMinutes(15)).orElseThrow();
+        assertTrue(warning.warnOverdue());
+        assertEquals(StockWorkPhase.REVIEW_REQUIRED, warning.work().phase());
+        assertTrue(warning.work().abortRequested());
+        assertTrue(warning.work().nextAttemptAt().isAfter(now.plusSeconds(899)));
+        context.close(); openContext(); makeDue(id);
+        var second = stock().claim(id, now.plusSeconds(1), Duration.ofSeconds(60)).orElseThrow();
+        assertFalse(stock().finish(second, false, now.plusSeconds(1), Duration.ofMinutes(15)).orElseThrow().warnOverdue());
+        var later = stock().claim(id, now.plusSeconds(902), Duration.ofSeconds(60)).orElseThrow();
+        assertTrue(stock().finish(later, false, now.plusSeconds(902), Duration.ofMinutes(15)).orElseThrow().warnOverdue());
+        makeDue(id); when(inventory.get(any())).thenAnswer(call -> active(id));
+        recovery(50).runOnce();
+        assertEquals(StockWorkPhase.REVIEW_REQUIRED, stock().get(id).phase());
+        verify(inventory, never()).reserve(any()); verify(inventory, never()).abort(any());
+        assertEquals(OrderStatus.PENDING_STOCK, response(id).status());
+    }
+
+    @Test void bookkeepingFailureLeavesLeaseAndFallbackDoesNotDoubleCountRecordedFailure() {
+        var id = ready(); var now = Instant.now();
+        var claim = stock().claim(id, now, Duration.ofSeconds(60)).orElseThrow();
+        sql("ALTER TABLE $schema.stock_work ADD CONSTRAINT reject_release CHECK (claim_token IS NOT NULL)");
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> stock().finish(claim, true, now, Duration.ofMinutes(15)));
+        assertEquals(0, stock().get(id).attemptCount());
+        assertTrue(stock().claim(id, now.plusSeconds(1), Duration.ofSeconds(60)).isEmpty());
+        sql("ALTER TABLE $schema.stock_work DROP CONSTRAINT reject_release");
+        var next = stock().claim(id, now.plusSeconds(61), Duration.ofSeconds(60)).orElseThrow();
+        var fallback = stock().finish(next, true, now.plusSeconds(61), Duration.ofMinutes(15)).orElseThrow();
+        assertEquals(1, fallback.work().attemptCount());
+        assertEquals(StockFailureCategory.PERSISTENCE_FAILURE, fallback.work().lastFailureCategory());
+        makeDue(id); var another = stock().claim(id, Instant.now(), Duration.ofSeconds(60)).orElseThrow();
+        stock().retry(id, StockWorkPhase.RESERVE_PENDING, StockFailureCategory.UPSTREAM_UNAVAILABLE);
+        assertEquals(2, stock().finish(another, true, Instant.now(), Duration.ofMinutes(15)).orElseThrow().work().attemptCount());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"initial", "maximum", "monitor"})
+    void invalidDurableSchedulingConfigurationFailsStartup(String invalid) {
+        context.close();
+        switch (invalid) {
+            case "initial" -> operationalProperties.put("stock.recovery.initial-backoff", "PT0S");
+            case "maximum" -> operationalProperties.put("stock.recovery.max-backoff", "PT30S");
+            default -> operationalProperties.put("stock.recovery.monitor-interval", "PT61S");
+        }
+        assertThrows(org.springframework.beans.factory.BeanCreationException.class, this::openContext);
+    }
+
+    @Test void leaseExpiredWorkerCannotUndoAbortOrClearNewOwnersClaim() throws Exception {
+        var id = ready(); var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        var barrier = new java.util.concurrent.atomic.AtomicBoolean();
+        var puts = new java.util.concurrent.atomic.AtomicInteger();
+        when(inventory.get(any())).thenThrow(missing());
+        when(inventory.reserve(any())).thenAnswer(call -> {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+            if (puts.incrementAndGet() == 1) {
+                entered.countDown();
+                assertTrue(release.await(15, TimeUnit.SECONDS));
+                assertTrue(barrier.get(), "Late PUT must meet the durable remote abort barrier");
+            }
+            throw new StockIntegrationFailure(409, StockFailureCategory.INVALID_UPSTREAM_RESPONSE);
+        });
+        when(inventory.abort(any())).thenAnswer(call -> {
+            barrier.set(true);
+            return new InventoryReservationClient.AbortProof(id, null);
+        });
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stale = executor.submit(() -> recovery(50).runOnce());
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS));
+                assertTrue(stock().due(Instant.now(), 50).isEmpty());
+                sql("UPDATE $schema.stock_work SET claimed_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE order_id = '" + id + "'");
+                recovery(50).runOnce();
+                assertEquals(StockWorkPhase.CLOSED, stock().get(id).phase());
+                assertEquals(OrderStatus.CANCELLED, response(id).status());
+            } finally { release.countDown(); }
+            stale.get(10, TimeUnit.SECONDS);
+        }
+        assertTrue(barrier.get());
+        assertEquals(2, puts.get());
+        assertEquals(StockWorkPhase.CLOSED, stock().get(id).phase());
+        assertTrue(stock().get(id).abortRequested());
+        assertEquals(OrderStatus.CANCELLED, response(id).status());
     }
 
     @EnableTransactionManagement
