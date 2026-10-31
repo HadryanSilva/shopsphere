@@ -123,6 +123,18 @@ class GatewaySecurityTests {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void internalInventoryAbortIsDeniedEvenForAdminAndAuthorizedInventoryIdentity() throws Exception {
+        var path = "/internal/api/v1/inventory/reservations/123/abort";
+        mvc.perform(post(path)).andExpect(status().isUnauthorized());
+        for (var roles : List.of(List.of("ADMIN"), List.of("INVENTORY_SERVICE"), List.of("ADMIN", "INVENTORY_SERVICE"))) {
+            when(decoder.decode("inventory-abort-token")).thenReturn(Jwt.withTokenValue("inventory-abort-token")
+                    .header("alg", "RS256").subject("service-account").claim("azp", "shopsphere-order")
+                    .claim("aud", List.of("shopsphere-api")).claim("realm_access", Map.of("roles", roles)).build());
+            mvc.perform(post(path).header("Authorization", "Bearer inventory-abort-token")).andExpect(status().isForbidden());
+        }
+    }
+
     @TestConfiguration
     @EnableWebMvc
     @EnableWebSecurity

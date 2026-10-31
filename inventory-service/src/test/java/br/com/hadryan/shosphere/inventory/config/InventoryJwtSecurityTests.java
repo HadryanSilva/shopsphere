@@ -98,7 +98,8 @@ class InventoryJwtSecurityTests {
 
     static Stream<String[]> internalOperations() {
         return Stream.of(new String[] {"PUT", RESERVATION}, new String[] {"GET", RESERVATION},
-                new String[] {"POST", RESERVATION + "/confirm"}, new String[] {"POST", RESERVATION + "/release"});
+                new String[] {"POST", RESERVATION + "/confirm"}, new String[] {"POST", RESERVATION + "/release"},
+                new String[] {"POST", RESERVATION + "/abort"});
     }
 
     @ParameterizedTest
@@ -170,6 +171,7 @@ class InventoryJwtSecurityTests {
         var jwt = sign(key, claims);
         assertForbidden("GET", ITEM, jwt);
         assertForbidden("PUT", RESERVATION, jwt);
+        assertForbidden("POST", RESERVATION + "/abort", jwt);
     }
 
     @Test
@@ -177,6 +179,7 @@ class InventoryJwtSecurityTests {
         var jwt = sign(key, claims(ISSUER, Instant.now().plusSeconds(300), List.of("shopsphere-api"), List.of(), "shopsphere-order")
                 .claim("realm_access", "ADMIN"));
         assertForbidden("GET", ITEM, jwt);
+        assertForbidden("POST", RESERVATION + "/abort", jwt);
     }
 
     @Test
@@ -227,11 +230,14 @@ class InventoryJwtSecurityTests {
     }
 
     private void assertUnauthorized(String jwt) {
-        runner().run(context -> mvc(context.getSourceApplicationContext())
-                .perform(get(ITEM).header("Authorization", "Bearer " + jwt))
-                .andExpect(status().isUnauthorized()).andExpect(header().string("WWW-Authenticate", containsString("Bearer")))
-                .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                .andExpect(jsonPath("$.status").value(401)).andExpect(jsonPath("$.detail").value("Authentication is required.")));
+        runner().run(context -> {
+            for (var op : List.of(new String[]{"GET", ITEM}, new String[]{"POST", RESERVATION + "/abort"}))
+                mvc(context.getSourceApplicationContext()).perform(request(HttpMethod.valueOf(op[0]), op[1])
+                                .header("Authorization", "Bearer " + jwt))
+                        .andExpect(status().isUnauthorized()).andExpect(header().string("WWW-Authenticate", containsString("Bearer")))
+                        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                        .andExpect(jsonPath("$.status").value(401)).andExpect(jsonPath("$.detail").value("Authentication is required."));
+        });
     }
 
     private String token(List<String> roles, String client) throws JOSEException {
@@ -291,7 +297,8 @@ class InventoryJwtSecurityTests {
                 "/api/v1/inventory/items/{id}/adjustments", "/api/v1/inventory/items/{id}/adjustments/{adjustmentId}",
                 "/internal/api/v1/inventory/reservations/{orderId}",
                 "/internal/api/v1/inventory/reservations/{orderId}/confirm",
-                "/internal/api/v1/inventory/reservations/{orderId}/release", "/outside"})
+                "/internal/api/v1/inventory/reservations/{orderId}/release",
+                "/internal/api/v1/inventory/reservations/{orderId}/abort", "/outside"})
         ResponseEntity<Void> handle() { return ResponseEntity.noContent().build(); }
     }
 }

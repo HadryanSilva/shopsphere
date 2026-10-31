@@ -203,7 +203,14 @@ limite de checkout, aborto durável e entregas 50–55, sem alterar o Inventory.
 A microtarefa 50 foi implementada posteriormente: coordenação/impedimento
 durável, V5 e aborto local atômico, conforme [ABORT_PERSISTENCE.md](ABORT_PERSISTENCE.md).
 Suíte completa com PostgreSQL: 279 aprovados e um token real opcional ignorado,
-sem falhas. Endpoint/segurança HTTP pertencem à 51; ligação ao Order nas 52–55.
+sem falhas.
+
+A microtarefa 51 expôs o POST de aborto com DTO ABORTED, null explícito,
+replay e política interna de role/azp existente. HTTP com PostgreSQL, validação,
+JWT e isolamento no Gateway foram validados; detalhes em
+[ABORT_API.md](ABORT_API.md) e [TESTING.md](TESTING.md). Sem nova migration.
+A próxima é a 52: persistir trabalho de estoque e transições no Order;
+a ligação HTTP e recuperação continuam nas 53–55.
 
 Antes de alterar Order/Cart, definir transporte e identidade entre serviços,
 ordem de persistência/reserva, timeouts, respostas ambíguas e compensação após

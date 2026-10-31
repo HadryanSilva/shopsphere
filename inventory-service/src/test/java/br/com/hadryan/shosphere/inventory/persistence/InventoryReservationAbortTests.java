@@ -365,4 +365,63 @@ class InventoryReservationAbortTests {
             assertEquals(state, assertThrows(SQLException.class, () -> statement.executeUpdate(sql)).getSQLState());
         }
     }
+
+    @Test void httpAbortAndReplayUseRealPersistenceAndKeepReservationEndpointsConsistent() {
+        run(() -> {
+            try (var web = new org.springframework.web.context.support.AnnotationConfigWebApplicationContext()) {
+                web.setParent(context);
+                web.setServletContext(new org.springframework.mock.web.MockServletContext());
+                web.register(AbortMvcConfig.class, br.com.hadryan.shosphere.inventory.config.SecurityConfig.class,
+                        br.com.hadryan.shosphere.inventory.config.JwtSecurityConfig.class,
+                        br.com.hadryan.shosphere.inventory.controller.InventoryReservationController.class,
+                        br.com.hadryan.shosphere.inventory.exception.ApiExceptionHandler.class);
+                web.refresh();
+                var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup(web)
+                        .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity()).build();
+                var token = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
+                        .jwt(j -> j.subject("service-account").claim("azp", client))
+                        .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_INVENTORY_SERVICE"));
+                var path = "/internal/api/v1/inventory/reservations/" + order;
+                var body = "{\"items\":[{\"productId\":\"" + product + "\",\"quantity\":1}]}";
+                var first = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path + "/abort")
+                                .with(token).contentType("application/json").content(body))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn();
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path + "/abort")
+                                .with(token).contentType("application/json").content(body))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().json(first.getResponse().getContentAsString(),
+                                org.springframework.test.json.JsonCompareMode.STRICT));
+                org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().json(
+                        "{\"orderId\":\"" + order + "\",\"status\":\"ABORTED\",\"reservation\":null}",
+                        org.springframework.test.json.JsonCompareMode.STRICT).match(first);
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path).with(token))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+                stocks().saveAndFlush(new InventoryStock(product, 2));
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path).with(token)
+                                .contentType("application/json").content(body))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isConflict());
+                assertEquals(0, stocks().findById(product).orElseThrow().getReserved());
+                var other = UUID.randomUUID();
+                var otherPath = "/internal/api/v1/inventory/reservations/" + other;
+                reserve().execute(client, other, request(product, 1));
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(otherPath + "/abort").with(token)
+                                .contentType("application/json").content(body))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.reservation.status").value("RELEASED"));
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(otherPath).with(token))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.status").value("RELEASED"));
+                assertEquals(2, stocks().findById(product).orElseThrow().getOnHand());
+                assertEquals(0, stocks().findById(product).orElseThrow().getReserved());
+            }
+        });
+    }
+
+    @org.springframework.boot.test.context.TestConfiguration
+    @org.springframework.web.servlet.config.annotation.EnableWebMvc
+    @org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
+    static class AbortMvcConfig {
+        @org.springframework.context.annotation.Bean
+        tools.jackson.databind.json.JsonMapper jsonMapper() { return tools.jackson.databind.json.JsonMapper.builder().build(); }
+    }
 }

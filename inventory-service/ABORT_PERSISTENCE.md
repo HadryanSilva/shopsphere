@@ -2,7 +2,8 @@
 
 Implementa a persistência e o caso de uso local aprovados no
 [contrato Order–Inventory](../contracts/order-inventory-proposal.md).
-O endpoint /abort, seu DTO HTTP e a allowlist ficam para a microtarefa 51.
+O endpoint /abort, seu DTO HTTP e a allowlist foram acrescentados posteriormente
+na [microtarefa 51](ABORT_API.md).
 Não há chamada ao Inventory a partir do Order nesta entrega.
 
 ## Modelo e migration
@@ -22,7 +23,7 @@ ordem do payload. Os impedimentos não são excluídos ou expirados automaticame
 Não foi acrescentado estado ao enum InventoryReservationStatus. aborted_at
 marca a decisão na coordenação; a reserva, se existir, continua usando
 ACTIVE/CONFIRMED/RELEASED/EXPIRED. O resultado Java do aborto contém orderId e
-reservation nullable; a representação HTTP ABORTED será acrescentada na 51.
+reservation nullable; a representação HTTP ABORTED foi acrescentada na 51.
 
 A migration é aditiva e não modifica V1–V4, saldos, reservas ou snapshots.
 Não fabrica coordenações para dados existentes. Ao operar uma reserva que já

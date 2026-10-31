@@ -2,6 +2,8 @@ package br.com.hadryan.shosphere.inventory.controller;
 
 import br.com.hadryan.shosphere.inventory.mapper.request.ReserveStockRequest;
 import br.com.hadryan.shosphere.inventory.mapper.response.ReservationResponse;
+import br.com.hadryan.shosphere.inventory.mapper.response.AbortReservationResponse;
+import br.com.hadryan.shosphere.inventory.service.AbortReservationUseCase;
 import br.com.hadryan.shosphere.inventory.service.GetReservationUseCase;
 import br.com.hadryan.shosphere.inventory.service.ReserveStockUseCase;
 import br.com.hadryan.shosphere.inventory.service.TransitionReservationUseCase;
@@ -23,6 +25,7 @@ public class InventoryReservationController {
     private final ReserveStockUseCase reserve;
     private final GetReservationUseCase getReservation;
     private final TransitionReservationUseCase transition;
+    private final AbortReservationUseCase abort;
 
     @PutMapping("/{orderId}")
     public ResponseEntity<ReservationResponse> reserve(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID orderId,
@@ -45,6 +48,12 @@ public class InventoryReservationController {
     @PostMapping("/{orderId}/release")
     public ResponseEntity<ReservationResponse> release(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID orderId) {
         return ResponseEntity.ok(transition.release(serviceClient(jwt), orderId));
+    }
+
+    @PostMapping("/{orderId}/abort")
+    public ResponseEntity<AbortReservationResponse> abort(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID orderId,
+                                                         @Valid @RequestBody ReserveStockRequest request) {
+        return ResponseEntity.ok(AbortReservationResponse.from(abort.execute(serviceClient(jwt), orderId, request)));
     }
 
     private String serviceClient(Jwt jwt) {

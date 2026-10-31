@@ -114,7 +114,9 @@ e release/404 não impedem esse PUT de criar ACTIVE posteriormente. Um contador
 de tentativas ou lease no Order também não cancela HTTP já enviado.
 
 Recomendação: acrescentar uma operação interna de aborto durável no Inventory.
-É uma **extensão de contrato aprovada para implementação**, não um endpoint existente:
+É uma **extensão de contrato aprovada**, implementada no Inventory nas
+microtarefas 50–51; detalhes HTTP em [ABORT_API.md](../inventory-service/ABORT_API.md).
+Na base original da microtarefa 49, este endpoint ainda não existia:
 
 ```http
 POST /internal/api/v1/inventory/reservations/{orderId}/abort
@@ -256,7 +258,7 @@ pedido já cancelado. Dados financeiros não são revalidados durante recuperaç
 |---|---|---|
 | 49 | Definir e aprovar contrato Order–Inventory | Concluída: proposta integral e sete decisões aprovadas explicitamente pelo utilizador; sem implementação nesta entrega documental. |
 | 50 | Persistir coordenação e aborto de reserva no Inventory | Concluída: V5 e coordenação por pedido/cliente/itens, aborto local atômico e serialização com PUT. Rollback, reinício, 100 itens e disputas com criação/transições validados com PostgreSQL; suíte com 279 aprovados e um token real opcional ignorado. Sem endpoint ou ligação ao Order. |
-| 51 | Expor aborto durável no Inventory | Endpoint/DTO/allowlist internos aprovados, replay/erros, JWT e ausência de rota no Gateway; contratos existentes preservados. |
+| 51 | Expor aborto durável no Inventory | Concluída: POST/DTO/allowlist internos, replay 200 com null explícito ou reserva terminal, validação/erros e JWT. HTTP com PostgreSQL e isolamento no Gateway validados; contratos existentes e V1–V5 preservados. Detalhes em ABORT_API.md e TESTING.md do Inventory. |
 | 52 | Persistir trabalho de estoque e transições no Order | Commit atômico com pedido, fases/decisão/agenda, unicidade e estado público; rollback/reinício/corridas com PostgreSQL. |
 | 53 | Implementar cliente e fluxo Order–Inventory | Limite de checkout com aborto durável do Cart, cliente interno, validações e matriz de recuperação; HTTP fora de transações. |
 | 54 | Agendar reserva, monitoramento e compensação | Lotes/backoff/claims, cooperação com conclusão Cart, expiração e alertas; retomada sem JWT público e sem duplicar efeitos. |

@@ -139,7 +139,13 @@ confirmação, liberação e expiração foram validados com PostgreSQL. Suíte 
 V1–V4 intactas, V5 aplicada apenas em schemas temporários de teste. Sem endpoint
 novo, alteração de segurança ou ligação ao Order. Detalhes em
 [inventory-service/ABORT_PERSISTENCE.md](inventory-service/ABORT_PERSISTENCE.md).
-A próxima é a **51 — Expor aborto durável no Inventory**.
+A microtarefa **51 — Expor aborto durável no Inventory** foi concluída:
+POST interno com resultado ABORTED, reservation explícita mesmo quando null,
+replay, validação e política JWT/role/azp existente. HTTP com PostgreSQL e
+isolamento no Gateway validados. Sem nova migration ou integração com Order.
+Contrato e resultados em [inventory-service/ABORT_API.md](inventory-service/ABORT_API.md)
+e [inventory-service/TESTING.md](inventory-service/TESTING.md).
+A próxima é a **52 — Persistir trabalho de estoque e transições no Order**.
 
 ## Validação PostgreSQL
 

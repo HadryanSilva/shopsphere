@@ -4,6 +4,7 @@ As regras abaixo estão implementadas no próprio Inventory. Não dependem da
 validação do Gateway. O cadastro de estoque foi implementado na microtarefa
 33, ajustes na 34 e consultas de saldo na 35. Criação/consulta de reservas foram
 implementadas na 37; confirmação/liberação na 38 e job de expiração na 39.
+O aborto durável foi exposto na 51, conforme [ABORT_API.md](ABORT_API.md).
 O job é interno ao processo e não cria endpoint ou permissões novas.
 Os testes da matriz usam
 controllers auxiliares marcados como componentes de teste, além dos testes
@@ -19,7 +20,7 @@ específicos dos controllers de cadastro, ajustes, consultas e reservas.
 | POST `/api/v1/inventory/items/{productId}/adjustments` | Realm role ADMIN |
 | GET `/api/v1/inventory/items/{productId}/adjustments/{id}` | Realm role ADMIN |
 | PUT/GET `/internal/api/v1/inventory/reservations/{orderId}` | Realm role INVENTORY_SERVICE e azp shopsphere-order |
-| POST `/internal/api/v1/inventory/reservations/{orderId}/confirm` ou `/release` | Realm role INVENTORY_SERVICE e azp shopsphere-order |
+| POST `/internal/api/v1/inventory/reservations/{orderId}/confirm`, `/release` ou `/abort` | Realm role INVENTORY_SERVICE e azp shopsphere-order |
 | Qualquer outro caminho/verbo | Negado |
 
 Não há consultas anónimas. ADMIN isoladamente não concede acesso interno;

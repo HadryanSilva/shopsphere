@@ -37,6 +37,7 @@ class InventoryReservationTransitionHttpTests {
     @MockitoBean ReserveStockUseCase reserve;
     @MockitoBean GetReservationUseCase query;
     @MockitoBean TransitionReservationUseCase transition;
+    @MockitoBean br.com.hadryan.shosphere.inventory.service.AbortReservationUseCase abort;
     @MockitoBean JwtDecoder decoder;
     final UUID order = UUID.randomUUID();
     String path(String operation) { return "/internal/api/v1/inventory/reservations/" + order + "/" + operation; }

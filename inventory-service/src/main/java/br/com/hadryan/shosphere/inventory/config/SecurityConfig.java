@@ -46,7 +46,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/internal/api/v1/inventory/reservations/*")
                                 .access(orderServiceAccess())
                         .requestMatchers(HttpMethod.POST, "/internal/api/v1/inventory/reservations/*/confirm",
-                                "/internal/api/v1/inventory/reservations/*/release").access(orderServiceAccess())
+                                "/internal/api/v1/inventory/reservations/*/release",
+                                "/internal/api/v1/inventory/reservations/*/abort").access(orderServiceAccess())
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> {

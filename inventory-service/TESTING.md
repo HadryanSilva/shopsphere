@@ -406,6 +406,43 @@ Cobertura nova com banco:
 - Cem itens atômicos, payloads inválidos sem escrita e constraints SQL de
   cliente/versão/prazo, quantidade/PK/FK, sem exigir estoque no aborto antecipado.
 
-Schemas são temporários e exclusivos. Não foi executado o endpoint /abort,
-que ainda não existe; o caso de uso local foi chamado com transações reais.
+Schemas são temporários e exclusivos. Na microtarefa 50, não foi executado o
+endpoint /abort, então inexistente; o caso de uso local usou transações reais.
 Não houve teste de token real do Keycloak nesta entrega ou integração ao Order.
+
+## API de aborto durável — microtarefa 51
+
+Contrato e limites em [ABORT_API.md](ABORT_API.md). Executados no Inventory:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*InventoryReservationAbortHttpTests' --tests '*InventoryReservationHttpTests' --tests '*InventoryReservationTransitionHttpTests' --tests '*InventoryJwtSecurityTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/inventory_db'
+.\gradlew.bat test --offline --no-daemon --tests '*InventoryReservationAbortTests.httpAbort*' --tests '*InventoryJwtSecurityTests' --tests '*InventoryReservationAbortHttpTests'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+Os conjuntos focados passaram. A suíte completa com PostgreSQL terminou com
+**304 testes aprovados**, zero falhas/erros e um teste opcional de token real
+Keycloak ignorado (305 casos). As migrations usaram schemas temporários.
+Uma tentativa foi bloqueada por acesso ao cache
+Gradle fora do sandbox e repetida com autorização, sem alterar configuração.
+O teste HTTP com PostgreSQL usa o caso de uso real: aborto antecipado/replay,
+GET ausente, PUT bloqueado pela barreira e liberação de reserva existente.
+O controller também verifica JSON com null explícito, RELEASED/EXPIRED,
+payload/UUID/quantidades/limite inválidos, erros e identidade derivada de azp.
+
+Os testes JWT com decoder real e chaves locais cobrem assinatura, issuer,
+tempo, audiência, roles/scopes e azp também no POST de aborto. O teste opcional
+com token emitido pelo Keycloak não foi habilitado nesta entrega.
+
+Executado no Gateway:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*GatewayInventoryAbortIsolationTests' --tests '*GatewaySecurityTests'
+```
+
+**29 testes aprovados**, zero falhas/erros/ignorados. A configuração real de
+rotas não encaminha POST/GET/PUT/PATCH/DELETE do aborto; a segurança nega
+inclusive ADMIN e a identidade autorizada diretamente no Inventory.
+Não foi repetida a suíte completa do Gateway. Não houve chamada entre serviços,
+mudança de Keycloak, migration nova ou alteração das migrations V1–V5.
