@@ -182,7 +182,8 @@ Por orientação do utilizador, a evolução permanece exclusivamente no backend
 A microtarefa **56 — Definir contrato Payment–Order–Inventory** teve sua definição
 documental concluída em
 [contracts/order-payment-inventory-proposal.md](contracts/order-payment-inventory-proposal.md).
-**Proposta pendente de aprovação**, incluindo as oito decisões ao final.
+**Contrato integral aprovado explicitamente pelo utilizador**, incluindo as
+oito decisões ao final; microtarefa 56 concluída.
 
 Propõe simulador monetário persistente de desenvolvimento, aceite idempotente
 no Order, captura/compensação duráveis, transferência da coordenação de estoque
@@ -190,9 +191,10 @@ e conclusão somente com provas monetária e de estoque compatíveis. Payment
 ainda é um esqueleto; não há implementação, cobrança real ou mudança de APIs,
 schema ou Keycloak nesta microtarefa. Frontend está fora do escopo.
 
-A sequência candidata **57–62** cobre base/segurança do Payment, captura e
+A sequência aprovada **57–62** cobre base/segurança do Payment, captura e
 compensação, coordenação no Order, cliente/fluxo, recuperação e integração real
-dos seis JARs. Não iniciar implementação até aprovar o contrato.
+dos seis JARs. Executar uma entrega por vez; a próxima é a
+**57 — Preparar Payment local, persistência e segurança**.
 
 ## Validação PostgreSQL
 

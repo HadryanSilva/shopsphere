@@ -1,10 +1,10 @@
 # Payment–Order–Inventory — proposta de contrato (microtarefa 56)
 
-**Estado: definição documental concluída; proposta pendente de aprovação.**
+**Estado: contrato integral aprovado explicitamente pelo utilizador; microtarefa 56 concluída.**
 Escopo exclusivamente backend, conforme orientação do utilizador. Nenhum
 endpoint, schema, permissão, simulador ou fluxo descrito como novo abaixo foi
-implementado nesta microtarefa. A aprovação deverá confirmar as decisões ao
-final antes de executar as entregas 57–62, uma por vez.
+implementado nesta microtarefa. A aprovação confirma as oito decisões ao final
+e autoriza a sequência 57–62, executando uma entrega por vez.
 
 ## Base verificada
 
@@ -256,7 +256,7 @@ aprovar, não mudança silenciosa.
 
 | Nº | Entrega | Critério de conclusão |
 |---|---|---|
-| 56 | Definir contrato backend Payment–Order–Inventory | Proposta completa, base verificada e decisões explícitas; aprovação pendente. Sem implementação nesta definição. |
+| 56 | Definir contrato backend Payment–Order–Inventory | Concluída: contrato integral e oito decisões aprovados explicitamente pelo utilizador. Sem implementação nesta definição. |
 | 57 | Preparar Payment local, persistência e segurança | Datasource/JWT/Flyway configuráveis, schema inicial e erros; role/azp/audiência testados e provisionamento local limitado ao que for aprovado. Sem provedor externo. |
 | 58 | Implementar captura e compensação simuladas duráveis | PUT/GET/cancel internos, intenção monetária imutável, movimentos únicos, barreira antes de captura e reembolso integral; rollback/reinício/concorrência com PostgreSQL. |
 | 59 | Persistir pagamento e transferir coordenação no Order | PUT público por proprietário, trabalho único e transferência atômica do estoque; status/paymentStatus e prevenção de mutações de worker antigo validados. Sem HTTP financeiro nesse commit local. |
@@ -292,7 +292,7 @@ reconferidos no código ao iniciar cada etapa.
 - Publicação de API, schemas e roles permanece limitada ao aprovado. Nenhuma
   tela, frontend, cartão real, PSP, evento, broker ou implantação é incluído.
 
-## Decisões para aprovação
+## Decisões aprovadas pelo utilizador
 
 1. Primeira entrega exclusivamente backend, com simulador monetário persistente
    em desenvolvimento, sem cobrança real/PSP/cartões ou frontend.
@@ -319,4 +319,5 @@ conferidos o esqueleto Payment, payment_db e a impossibilidade atual de desfazer
 consumo CONFIRMED. Essa lacuna fundamenta a resolução antes de reembolso.
 Não foram executados testes de aplicação, migrations, cobranças, alterações de
 Keycloak ou chamadas a PSP nesta tarefa documental. Validar diff/referências e
-criar commit local, mantendo aprovação pendente até manifestação do utilizador.
+criar commit local. A aprovação posterior do utilizador foi registrada
+documentalmente, sem executar operações financeiras ou alterar o Keycloak.
