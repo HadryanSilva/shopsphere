@@ -783,3 +783,81 @@ exigiu seu isolamento no novo OrderPaymentController; a configuração antiga
 ficou preservada. Um teste de propagação de erros também teve o stubbing
 Mockito corrigido para substituir uma chamada que já lançava exceção. As
 execuções focadas posteriores e a regressão final completa passaram.
+
+## Microtarefa 60 — cliente e coordenador financeiro
+
+Desenho e limites em [PAYMENT_FLOW.md](PAYMENT_FLOW.md). V8 incrementa V7 com
+provas monetárias, decisão de estoque seguro e SETTLED, sem alterar migrations
+anteriores ou schema de outros serviços. A suíte PaymentFlowPersistenceTests
+parte de uma fixture de trabalho aceito no schema V7, aplica somente V8 e valida os
+mapeamentos Hibernate com validate.
+
+Validação focada no diretório `order-service`:
+
+```powershell
+.\gradlew.bat test --offline --no-daemon --tests '*PaymentClientTests' --tests '*InventoryReservationClientTests'
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*PaymentFlowPersistenceTests'
+```
+
+PaymentClientTests usa servidor HTTP/token controlado, RestClient/JDK reais,
+client_credentials, limites/timeouts, status, recusas, JSON inválido, nulls,
+identidade e centavos no limite NUMERIC sem conversão para double. Inclui
+invalidação do token em 401/403, ausência de redirect/retry e configuração.
+InventoryReservationClientTests passa a cobrir também POST confirm, que exige
+prova CONFIRMED válida e não envia body financeiro.
+
+A matriz PostgreSQL cobre confirmação com duas provas, recusa, expiração antes
+e depois da captura, abort 409 com confirmação vencedora, barreira sem reserva,
+404 sem falso encerramento, respostas perdidas e reinício de contexto para
+captura/confirmação/aborto/reembolso, pendências, provas incompatíveis e revisão.
+Os clientes são simulados nessa matriz; cada chamada verifica ausência de
+transação e o cancel verifica prova de estoque seguro já commitada.
+
+Há cenários concorrentes com chamada retida: confirm antigo após aborto e
+reembolso não consome estoque; confirm que já venceu conclui sem refund;
+captura retida depois do cancel é recusada pela barreira. Provas contraditórias
+exigem revisão. Constraints temporárias injetam falhas de fechamento depois
+do sucesso remoto, comprovando rollback do estado público/trabalho de estoque
+e reconciliação posterior. Outros testes validam constraints de V8.
+
+Uma falha injetada identificou que o flush direto do EntityManager não passava
+pela tradução de exceções do repositório. O coordenador agora usa o flush do
+repositório para registrar PERSISTENCE_FAILURE e conservar a fase após rollback.
+O conflito de imports e a referência ao bean de consulta do teste foram
+corrigidos antes da reexecução focada bem-sucedida.
+
+Para regressão completa, gerar bootJar atualizado do Order e executar os mesmos
+comandos da etapa 59 com SHOPSPHERE_TEST_CHECKOUT_INTEGRATION=true e
+SHOPSPHERE_TEST_STOCK_INTEGRATION=true. As duas suítes existentes exercitam
+os 30 cenários anteriores de quatro/cinco processos; a integração financeira
+com seis JARs permanece para a etapa 62. Nenhum token/secret real é necessário
+nos testes novos e nenhuma configuração Keycloak foi alterada nesta etapa.
+
+A primeira regressão integral executou 457 testes e apontou cinco falhas em
+casos anteriores de agenda/lease de SnapshotCheckoutPersistenceTests e
+StockWorkPersistenceTests. A reprodução isolada desses métodos aprovou os
+sete casos parametrizados envolvidos, sem modificar código, expectativas ou
+fixtures de tempo. Uma comparação pontual dos relógios de PostgreSQL/host não
+mostrou desvio relevante; a causa dessas falhas ainda não foi confirmada.
+
+A segunda regressão integral teve uma falha em 457 casos: BindException
+`Address already in use: getsockopt` ao abrir conexão PostgreSQL no teste antigo
+de claim após reinício. Para reduzir a abertura de conexões locais, a nova
+fixture financeira passou a reutilizar um pool Hikari de até quatro conexões,
+já disponível nas dependências do projeto, fechado no teardown. Não houve
+alteração de asserções, configuração global de rede ou código de produção
+para contornar essa falha. Os 42 cenários financeiros e o caso de claim foram
+reexecutados e passaram; o bootJar final também passou.
+
+O cenário financeiro adicional recebe CONFIRMED contraditório após CLOSED:
+conserva o status público anterior e marca REVIEW_REQUIRED, sem reabrir captura,
+confirmação ou reembolso. A recuperação financeira automática segue para a 61.
+
+Resultado final em 2026-11-01: `.\gradlew.bat test --offline --no-daemon --rerun-tasks`
+com PostgreSQL e as duas suítes de processos habilitadas aprovou **458 testes,
+zero falhas, erros ou ignorados**. Inclui 38 PaymentClientTests, 42
+PaymentFlowPersistenceTests e os 30 cenários anteriores com JARs reais
+(13 checkout e 17 estoque). O bootJar atualizado e `git diff --cached --check`
+passaram. V8 aplicada exclusivamente em schemas temporários, sem modificar
+V1–V7, schema de outros serviços ou desabilitar asserções/testes.

@@ -235,7 +235,24 @@ Sem chamadas financeiras: aceites permanecem PROCESSING até as etapas 60–61.
 Sem alteração de produção no Gateway, outros serviços ou frontend.
 Detalhes em [order-service/PAYMENT_HANDOFF.md](order-service/PAYMENT_HANDOFF.md)
 e [order-service/TESTING.md](order-service/TESTING.md).
-A próxima é a **60 — Integrar coordenador Order–Payment–Inventory**.
+A microtarefa **60 — Integrar coordenador Order–Payment–Inventory** foi concluída:
+cliente Payment com identidade de serviço e timeouts 2000/5000 ms, validação
+monetária exata, POST confirm do Inventory e coordenador por fases persistidas.
+V8 guarda provas e decisões; confirmação pública exige captura e estoque
+CONFIRMED compatíveis. Cancelamento/reembolso exige prova anterior de estoque
+seguro e encerramento monetário comprovado. Respostas perdidas são reconciliadas
+na mesma identidade; incompatibilidades exigem revisão, inclusive CONFIRMED
+contraditório recebido após encerramento. StockWork SETTLED não retorna ao
+worker antigo. O PUT público continua sem aguardar HTTP financeiro.
+Validação final: **458 testes Order aprovados**, sem falhas/erros/ignorados,
+incluindo 42 cenários financeiros, 38 do cliente e 30 de processos anteriores.
+bootJar e diff --check aprovados; V8 somente em schemas de teste, V1–V7 intactas.
+Falhas das rodadas anteriores e ajuste do pool da fixture financeira estão
+registrados em [order-service/TESTING.md](order-service/TESTING.md).
+Sem worker financeiro automático nesta etapa, novo endpoint, alteração de
+outros serviços, frontend, Keycloak ou dependências. Fluxo e limites em
+[order-service/PAYMENT_FLOW.md](order-service/PAYMENT_FLOW.md).
+A próxima é a **61 — Recuperar capturas, confirmações e compensações**.
 
 ## Validação PostgreSQL
 

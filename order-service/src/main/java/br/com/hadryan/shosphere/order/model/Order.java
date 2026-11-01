@@ -60,6 +60,17 @@ public class Order extends BaseEntity {
         paymentStatus = OrderPaymentStatus.PROCESSING;
     }
 
+    public void observePayment(OrderPaymentStatus paymentStatus) {
+        if (status != OrderStatus.PENDING_PAYMENT || this.paymentStatus == null)
+            throw new IllegalStateException("Order is not awaiting its payment work");
+        this.paymentStatus = Objects.requireNonNull(paymentStatus);
+    }
+
+    public void reviewPayment() {
+        if (paymentStatus == null) throw new IllegalStateException("Order has no payment work");
+        paymentStatus = OrderPaymentStatus.REVIEW_REQUIRED;
+    }
+
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal subtotal = BigDecimal.ZERO.setScale(2);
 

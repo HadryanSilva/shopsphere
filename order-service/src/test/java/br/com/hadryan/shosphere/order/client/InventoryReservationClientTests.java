@@ -109,6 +109,16 @@ class InventoryReservationClientTests {
         runner().run(context -> assertEquals(StockReservationStatus.valueOf(state), context.getBean(InventoryReservationClient.class).abort(work()).reservation().status()));
     }
 
+    @Test void confirmsUsingServiceIdentityAndRequiresConfirmedProof() {
+        runner().run(context -> {
+            var client = context.getBean(InventoryReservationClient.class);
+            response.set(reservation("CONFIRMED")); assertEquals(StockReservationStatus.CONFIRMED, client.confirm(work()).status());
+            assertEquals("POST /internal/api/v1/inventory/reservations/" + order + "/confirm", route.get());
+            assertEquals("", body.get()); assertEquals("Bearer service-token", authorization.get());
+            response.set(reservation("ACTIVE")); assertThrows(StockIntegrationFailure.class, () -> client.confirm(work()));
+        });
+    }
+
     @ParameterizedTest @ValueSource(strings = {"missing", "active", "identity", "null-body", "wrong-status"})
     void rejectsInvalidAbortEnvelopeInsteadOfClaimingCancellation(String variant) {
         response.set(switch (variant) {

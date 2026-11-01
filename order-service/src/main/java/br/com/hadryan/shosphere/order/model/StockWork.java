@@ -157,7 +157,38 @@ public class StockWork {
 
     public void warned(Instant at) { if (isManagedByStock()) lastWarningAt = micros(Objects.requireNonNull(at)); }
 
-    public boolean isManagedByStock() { return phase != StockWorkPhase.CLOSED && phase != StockWorkPhase.PAYMENT_PENDING; }
+    public boolean isManagedByStock() {
+        return phase != StockWorkPhase.CLOSED && phase != StockWorkPhase.PAYMENT_PENDING && phase != StockWorkPhase.SETTLED;
+    }
+
+    public void paymentObserved(StockReservationStatus status, Instant created, Instant expires, Instant updated) {
+        if (phase != StockWorkPhase.PAYMENT_PENDING || status == null || created == null || expires == null || updated == null
+                || !created.isBefore(expires) || updated.isBefore(created)
+                || !Objects.equals(reservationCreatedAt, created) || !Objects.equals(reservationExpiresAt, expires))
+            throw new IllegalArgumentException("Invalid stock proof");
+        if (reservationUpdatedAt != null && updated.isBefore(reservationUpdatedAt)) return;
+        if (reservationStatus != StockReservationStatus.ACTIVE && reservationStatus != status)
+            throw new IllegalArgumentException("Stock proof regressed");
+        if (reservationStatus == status && Objects.equals(reservationUpdatedAt, updated)) return;
+        reservationStatus = status; reservationUpdatedAt = updated; updatedAt = now();
+    }
+
+    public void completePayment(boolean confirmed, boolean absent) {
+        if (phase != StockWorkPhase.PAYMENT_PENDING) throw new IllegalStateException("Stock is not owned by payment");
+        if (confirmed) {
+            if (reservationStatus != StockReservationStatus.CONFIRMED || absent) throw new IllegalStateException("Stock is not confirmed");
+            phase = StockWorkPhase.SETTLED;
+        } else {
+            if (!absent && reservationStatus != StockReservationStatus.RELEASED && reservationStatus != StockReservationStatus.EXPIRED)
+                throw new IllegalStateException("Stock is not safely closed");
+            if (absent) { reservationStatus = null; reservationCreatedAt = null; reservationExpiresAt = null; reservationUpdatedAt = null; }
+            abortRequested = true;
+            reason = absent ? StockWorkReason.RESERVATION_REJECTED : reservationStatus == StockReservationStatus.EXPIRED
+                    ? StockWorkReason.RESERVATION_EXPIRED : StockWorkReason.RESERVATION_RELEASED;
+            phase = StockWorkPhase.CLOSED;
+        }
+        nextAttemptAt = null; lastFailureCategory = null; releaseClaim(); updatedAt = now();
+    }
 
     public void transferToPayment() {
         if (phase != StockWorkPhase.RESERVED || abortRequested || reason != null || reservationStatus != StockReservationStatus.ACTIVE)

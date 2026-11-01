@@ -32,6 +32,13 @@ public class InventoryReservationClient {
                 .retrieve().toEntity(JsonNode.class), true), work);
     }
 
+    public StockReservationObservation confirm(StockWorkSnapshot work) {
+        var proof = reservation(call(() -> client.post().uri(PATH + "/confirm", work.orderId())
+                .header("Authorization", tokens.authorization()).retrieve().toEntity(JsonNode.class), false), work);
+        if (proof.status() != StockReservationStatus.CONFIRMED) throw invalid();
+        return proof;
+    }
+
     public AbortProof abort(StockWorkSnapshot work) {
         var json = call(() -> client.post().uri(PATH + "/abort", work.orderId()).header("Authorization", tokens.authorization())
                 .contentType(MediaType.APPLICATION_JSON).body(Map.of("items", work.items()))

@@ -1,6 +1,12 @@
 services:
+  payment:
+    url: ${SHOPSPHERE_PAYMENT_URL:http://localhost:8085}
   inventory:
     url: ${SHOPSPHERE_INVENTORY_URL:http://localhost:8084}
+
+payment:
+  connect-timeout: ${SHOPSPHERE_PAYMENT_CONNECT_TIMEOUT:2000}
+  read-timeout: ${SHOPSPHERE_PAYMENT_READ_TIMEOUT:5000}
 
 stock:
   connect-timeout: ${SHOPSPHERE_STOCK_CONNECT_TIMEOUT:2000}

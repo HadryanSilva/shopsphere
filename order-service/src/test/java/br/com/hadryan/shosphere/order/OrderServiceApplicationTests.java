@@ -41,6 +41,7 @@ class OrderServiceApplicationTests {
     @MockitoBean private br.com.hadryan.shosphere.order.service.impl.CheckoutIntentTransaction checkoutIntentTransaction;
     @MockitoBean private br.com.hadryan.shosphere.order.service.impl.StockWorkTransaction stockWorkTransaction;
     @MockitoBean private br.com.hadryan.shosphere.order.service.impl.OrderPaymentTransaction orderPaymentTransaction;
+    @MockitoBean private br.com.hadryan.shosphere.order.service.impl.PaymentWorkTransaction paymentWorkTransaction;
     @MockitoBean private CartClient cartClient;
     @MockitoBean private CatalogClient catalogClient;
     @MockitoBean private JwtDecoder jwtDecoder;
