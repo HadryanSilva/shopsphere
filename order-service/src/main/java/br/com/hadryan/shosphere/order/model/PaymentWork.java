@@ -30,6 +30,10 @@ public class PaymentWork {
     @Column(nullable = false) private boolean stockSafe;
     @Column(nullable = false) private boolean stockAbsent;
     @Enumerated(EnumType.STRING) @Column(length = 40) private PaymentFailureCategory lastFailureCategory;
+    private UUID claimToken;
+    private Instant claimedUntil;
+    @Column(nullable = false) private long attemptCount;
+    private Instant lastWarningAt;
 
     protected PaymentWork() {}
 
@@ -74,7 +78,22 @@ public class PaymentWork {
         if (stockSafe && stockAbsent != absent) throw new IllegalArgumentException("Stock proof changed");
         if (!stockSafe) { stockSafe = true; stockAbsent = absent; touch(); }
     }
-    public void failure(PaymentFailureCategory category) { lastFailureCategory = Objects.requireNonNull(category); touch(); }
+    public void failure(PaymentFailureCategory category) {
+        attemptCount = Math.addExact(attemptCount, 1L);
+        lastFailureCategory = Objects.requireNonNull(category); touch();
+    }
+    public void clearFailure() { lastFailureCategory = null; }
+    public void claim(UUID token, Instant until) {
+        if (phase.terminal()) throw new IllegalStateException("Payment work is terminal");
+        claimToken = Objects.requireNonNull(token); claimedUntil = Objects.requireNonNull(until).truncatedTo(ChronoUnit.MICROS);
+    }
+    public boolean ownsClaim(UUID token) { return token != null && token.equals(claimToken); }
+    public boolean canExecute(UUID token, Instant now) {
+        return token == null ? claimToken == null : ownsClaim(token) && claimedUntil.isAfter(now);
+    }
+    public void releaseClaim() { claimToken = null; claimedUntil = null; }
+    public void schedule(Instant at) { if (!phase.terminal()) nextAttemptAt = Objects.requireNonNull(at).truncatedTo(ChronoUnit.MICROS); }
+    public void warned(Instant at) { lastWarningAt = Objects.requireNonNull(at).truncatedTo(ChronoUnit.MICROS); }
     private void touch() {
         var now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         updatedAt = now.isBefore(updatedAt) ? updatedAt : now;

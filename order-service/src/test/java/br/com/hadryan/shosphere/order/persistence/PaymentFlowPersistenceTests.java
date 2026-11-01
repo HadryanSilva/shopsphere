@@ -61,7 +61,7 @@ class PaymentFlowPersistenceTests {
         jdbc.update("INSERT INTO " + schema + ".stock_work(order_id,checkout_id,phase,reservation_status,reservation_created_at,reservation_expires_at,reservation_updated_at,created_at,updated_at) "
                 + "VALUES (?,?,'PAYMENT_PENDING','ACTIVE',?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", id, checkout, java.sql.Timestamp.from(created), java.sql.Timestamp.from(expires), java.sql.Timestamp.from(created));
         jdbc.update("INSERT INTO " + schema + ".payment_work(order_id,phase,amount,currency,next_attempt_at,created_at,updated_at) VALUES (?,'CAPTURE_PENDING',25,'EUR',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", id);
-        assertEquals(1, migrate(null).migrate().migrationsExecuted);
+        assertEquals(2, migrate(null).migrate().migrationsExecuted);
         open(); installRemotes();
     }
     private Flyway migrate(String target) {
@@ -89,20 +89,20 @@ class PaymentFlowPersistenceTests {
     }
     private void outside(String event) { assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); events.add(event); }
     private void installRemotes() {
-        when(inventory.get(any())).thenAnswer(call -> { outside("stock-get"); if (remoteStock.get() == null) throw stockFailure(404); return reservation(remoteStock.get()); });
-        when(inventory.confirm(any())).thenAnswer(call -> {
+        doAnswer(call -> { outside("stock-get"); if (remoteStock.get() == null) throw stockFailure(404); return reservation(remoteStock.get()); }).when(inventory).get(any());
+        doAnswer(call -> {
             outside("stock-confirm");
             if (!remoteStock.compareAndSet(StockReservationStatus.ACTIVE, StockReservationStatus.CONFIRMED) && remoteStock.get() != StockReservationStatus.CONFIRMED) throw stockFailure(409);
             return reservation(StockReservationStatus.CONFIRMED);
-        });
-        when(inventory.abort(any())).thenAnswer(call -> {
+        }).when(inventory).confirm(any());
+        doAnswer(call -> {
             outside("stock-abort"); if (remoteStock.get() == StockReservationStatus.CONFIRMED) throw stockFailure(409);
             remoteStock.compareAndSet(StockReservationStatus.ACTIVE, StockReservationStatus.RELEASED);
             return new InventoryReservationClient.AbortProof(id, remoteStock.get() == null ? null : reservation(remoteStock.get()));
-        });
-        when(money.get(any())).thenAnswer(call -> { outside("money-get"); if (remoteMoney.get() == null) throw moneyFailure(404); return proof(remoteMoney.get()); });
-        when(money.capture(any())).thenAnswer(call -> performCapture());
-        when(money.cancel(any())).thenAnswer(call -> performCancel());
+        }).when(inventory).abort(any());
+        doAnswer(call -> { outside("money-get"); if (remoteMoney.get() == null) throw moneyFailure(404); return proof(remoteMoney.get()); }).when(money).get(any());
+        doAnswer(call -> performCapture()).when(money).capture(any());
+        doAnswer(call -> performCancel()).when(money).cancel(any());
     }
     private PaymentObservation performCapture() {
         outside("money-capture");
@@ -364,6 +364,209 @@ class PaymentFlowPersistenceTests {
             assertThrows(org.springframework.dao.DataAccessException.class, () -> sql("UPDATE $schema.payment_work SET " + change));
         }
         assertEquals(PaymentWorkPhase.CAPTURE_PENDING, tx().get(id).phase());
+    }
+
+    private PaymentRecoveryJob recovery() { return new PaymentRecoveryJob(tx(), context.getBean(PaymentFlow.class), 50,
+            java.time.Duration.ofSeconds(60), java.time.Duration.ofMinutes(15), java.time.Duration.ofSeconds(60)); }
+    private void makePaymentDue() { jdbc.update("UPDATE " + schema + ".payment_work SET next_attempt_at=? WHERE order_id=?",
+            java.sql.Timestamp.from(Instant.now().minusSeconds(1)), id); }
+    private void expirePaymentLease() { jdbc.update("UPDATE " + schema + ".payment_work SET claimed_until=? WHERE order_id=?",
+            java.sql.Timestamp.from(Instant.now().minusSeconds(1)), id); }
+    private PaymentWorkClaim claimPayment() { makePaymentDue(); return tx().claim(id, Instant.now(), java.time.Duration.ofSeconds(60)).orElseThrow(); }
+    private void pass() { makePaymentDue(); recovery().runOnce(); }
+
+    @Test void scheduledPassesProgressWithoutPublicReplayOrUserJwtAndCloseBothWorks() {
+        pass(); assertEquals(PaymentWorkPhase.CONFIRM_PENDING, tx().get(id).phase()); assertEquals("CAPTURED", order().paymentStatus());
+        pass(); assertEquals(PaymentWorkPhase.DONE, tx().get(id).phase()); assertEquals(StockWorkPhase.SETTLED, tx().get(id).stock().phase());
+        assertTrue(tx().due(Instant.now().plusSeconds(10000), 50).isEmpty()); assertEquals(1, captures.get());
+    }
+    @ParameterizedTest @ValueSource(strings = {"capture", "confirm", "abort", "cancel"})
+    void workerRecoversLostRemoteResultsAfterRestartWithoutUserToken(String boundary) {
+        switch (boundary) {
+            case "capture" -> doAnswer(call -> { performCapture(); throw moneyFailure(503); }).when(money).capture(any());
+            case "confirm" -> { capture(); doAnswer(call -> { remoteStock.set(StockReservationStatus.CONFIRMED); throw stockFailure(503); }).when(inventory).confirm(any()); }
+            case "abort" -> { capture(); resolving(); doAnswer(call -> { remoteStock.set(StockReservationStatus.RELEASED); throw stockFailure(503); }).when(inventory).abort(any()); }
+            case "cancel" -> { capture(); stockSafe(); doAnswer(call -> { performCancel(); throw moneyFailure(503); }).when(money).cancel(any()); }
+        }
+        pass(); assertEquals(OrderStatus.PENDING_PAYMENT, order().status()); restart(); installRemotes();
+        for (int n = 0; n < 4 && !tx().get(id).phase().terminal(); n++) pass();
+        assertTrue(tx().get(id).phase().terminal()); assertEquals(1, captures.get());
+        assertEquals(boundary.equals("abort") || boundary.equals("cancel") ? 1 : 0, refunds.get());
+        assertTrue(tx().due(Instant.now().plusSeconds(10000), 50).isEmpty());
+    }
+    @Test void claimsAreUniqueSurviveRestartAndObsoleteOwnerCannotMutateOrReleaseNewClaim() throws Exception {
+        makePaymentDue();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var gate = new CountDownLatch(1); var futures = new ArrayList<Future<Optional<PaymentWorkClaim>>>();
+            for (int n = 0; n < 8; n++) futures.add(executor.submit(() -> { gate.await(); return tx().claim(id, Instant.now(), java.time.Duration.ofSeconds(60)); }));
+            gate.countDown(); var claims = new ArrayList<PaymentWorkClaim>();
+            for (var future : futures) future.get(10, TimeUnit.SECONDS).ifPresent(claims::add);
+            assertEquals(1, claims.size()); var first = claims.getFirst(); restart();
+            assertTrue(tx().due(Instant.now(), 50).isEmpty()); expirePaymentLease(); var next = claimPayment();
+            assertNotEquals(first.token(), next.token());
+            assertThrows(PaymentClaimLostException.class, () -> tx().payment(id, PaymentWorkPhase.CAPTURE_PENDING, proof(OrderPaymentStatus.CAPTURED), first.token()));
+            assertThrows(PaymentClaimLostException.class, () -> tx().resolution(id, PaymentWorkPhase.CAPTURE_PENDING, first.token()));
+            assertThrows(PaymentClaimLostException.class, () -> tx().failure(id, PaymentWorkPhase.CAPTURE_PENDING, PaymentFailureCategory.PERSISTENCE_FAILURE, first.token()));
+            assertThrows(PaymentClaimLostException.class, () -> tx().inventory(id, PaymentWorkPhase.CAPTURE_PENDING, reservation(StockReservationStatus.EXPIRED), first.token()));
+            assertThrows(PaymentClaimLostException.class, () -> tx().aborted(id, id, null, first.token()));
+            assertTrue(tx().finish(first, true, Instant.now(), java.time.Duration.ofMinutes(15)).isEmpty());
+            context.getBean(PaymentFlow.class).resume(first); verifyNoInteractions(money, inventory);
+            assertEquals(next.token(), jdbc.queryForObject("SELECT claim_token FROM " + schema + ".payment_work", UUID.class));
+        }
+    }
+    @Test void expiredLeaseStopsBeforeHttpEvenWithoutReplacementOwner() {
+        var claim = claimPayment(); expirePaymentLease(); context.getBean(PaymentFlow.class).resume(claim); verifyNoInteractions(money, inventory);
+        assertThrows(PaymentClaimLostException.class, () -> tx().get(id, claim.token()));
+        assertTrue(tx().finish(claim, false, Instant.now(), java.time.Duration.ofMinutes(15)).isPresent());
+    }
+    @ParameterizedTest @ValueSource(strings = {"stock_work", "orders", "payment_work"})
+    void claimSkipsLockedRowsWithoutInvertingStockOrderPaymentLockOrder(String table) throws Exception {
+        makePaymentDue();
+        try (var connection = source.getConnection(); var executor = Executors.newSingleThreadExecutor()) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.createStatement()) { statement.executeQuery("SELECT 1 FROM " + schema + "." + table + " WHERE "
+                    + (table.equals("orders") ? "id" : "order_id") + "='" + id + "' FOR UPDATE").close(); }
+            assertTrue(executor.submit(() -> tx().claim(id, Instant.now(), java.time.Duration.ofSeconds(60))).get(3, TimeUnit.SECONDS).isEmpty());
+            if (table.equals("payment_work")) assertTrue(executor.submit(() -> tx().due(Instant.now(), 50)).get(3, TimeUnit.SECONDS).isEmpty());
+            connection.rollback();
+        }
+        assertTrue(tx().claim(id, Instant.now(), java.time.Duration.ofSeconds(60)).isPresent());
+    }
+    @Test void backoffPersistsAcrossRestartCapsAndNeverDoubleCountsBookkeepingFallback() {
+        int attempts = 0;
+        for (int seconds : new int[]{60,120,240,480,900,900}) {
+            var claim = claimPayment(); var now = Instant.now();
+            tx().failure(id, PaymentWorkPhase.CAPTURE_PENDING, PaymentFailureCategory.UPSTREAM_UNAVAILABLE, claim.token());
+            var result = tx().finish(claim, true, now, java.time.Duration.ofMinutes(15)).orElseThrow();
+            assertEquals(++attempts, result.attempts());
+            var next = jdbc.queryForObject("SELECT next_attempt_at FROM " + schema + ".payment_work", java.sql.Timestamp.class).toInstant();
+            assertEquals(now.plusSeconds(seconds).getEpochSecond(), next.getEpochSecond());
+            if (attempts == 3) restart();
+        }
+    }
+    @Test void nextAttemptAnticipatesReservationDeadlineWithoutDeclaringItExpiredLocally() {
+        var deadline = Instant.now().plusSeconds(10).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        jdbc.update("UPDATE " + schema + ".stock_work SET reservation_expires_at=?", java.sql.Timestamp.from(deadline));
+        var claim = claimPayment(); tx().finish(claim, false, Instant.now(), java.time.Duration.ofMinutes(15));
+        var next = jdbc.queryForObject("SELECT next_attempt_at FROM " + schema + ".payment_work", java.sql.Timestamp.class).toInstant();
+        assertEquals(deadline.truncatedTo(java.time.temporal.ChronoUnit.MICROS), next);
+        assertEquals(OrderStatus.PENDING_PAYMENT, order().status()); assertFalse(tx().get(id).stockSafe());
+    }
+    @Test void warningAndRetryAreDurableAndAgeOrAttemptsNeverAbandonWork() {
+        jdbc.update("UPDATE " + schema + ".payment_work SET created_at=?,attempt_count=1000", java.sql.Timestamp.from(Instant.now().minusSeconds(3600)));
+        doThrow(moneyFailure(503)).when(money).get(any()); pass();
+        assertEquals(PaymentWorkPhase.CAPTURE_PENDING, tx().get(id).phase());
+        assertEquals(1001, jdbc.queryForObject("SELECT attempt_count FROM " + schema + ".payment_work", Long.class));
+        var warning = jdbc.queryForObject("SELECT last_warning_at FROM " + schema + ".payment_work", java.sql.Timestamp.class);
+        assertNotNull(warning); restart(); installRemotes(); pass();
+        assertEquals(warning, jdbc.queryForObject("SELECT last_warning_at FROM " + schema + ".payment_work", java.sql.Timestamp.class));
+        pass(); assertEquals(PaymentWorkPhase.DONE, tx().get(id).phase()); assertEquals(1, captures.get());
+    }
+    @Test void reviewOnlyReadsAndUsesLongDiagnosticIntervalWithoutReopeningMoney() {
+        tx().failure(id, PaymentWorkPhase.CAPTURE_PENDING, PaymentFailureCategory.INCONSISTENT_PROOF);
+        clearInvocations(money, inventory); pass();
+        verify(money).get(any()); verify(inventory).get(any()); verify(money, never()).capture(any()); verify(money, never()).cancel(any());
+        verify(inventory, never()).confirm(any()); verify(inventory, never()).abort(any());
+        assertEquals(PaymentWorkPhase.REVIEW_REQUIRED, tx().get(id).phase()); assertEquals("REVIEW_REQUIRED", order().paymentStatus());
+        assertTrue(tx().due(Instant.now().plusSeconds(899), 50).isEmpty());
+    }
+    @Test void failedFinishRollsBackClaimReleaseScheduleCounterAndWarningAndCanBeRetried() {
+        var claim = claimPayment();
+        sql("ALTER TABLE $schema.payment_work ADD CONSTRAINT reject_finish CHECK (claim_token IS NOT NULL)");
+        assertThrows(org.springframework.dao.DataAccessException.class, () -> tx().finish(claim, true, Instant.now(), java.time.Duration.ofMinutes(15)));
+        assertEquals(claim.token(), jdbc.queryForObject("SELECT claim_token FROM " + schema + ".payment_work", UUID.class));
+        assertEquals(0, jdbc.queryForObject("SELECT attempt_count FROM " + schema + ".payment_work", Long.class));
+        sql("ALTER TABLE $schema.payment_work DROP CONSTRAINT reject_finish"); restart();
+        assertEquals(1, tx().finish(claim, true, Instant.now(), java.time.Duration.ofMinutes(15)).orElseThrow().attempts());
+    }
+    @Test void staleGetAfterLeaseLossCannotDispatchCaptureOrEraseAnotherOwnersProof() throws Exception {
+        var entered = new CountDownLatch(1); var release = new CountDownLatch(1); var gets = new AtomicInteger();
+        doAnswer(call -> { outside("money-get"); if (gets.incrementAndGet() == 1) { entered.countDown(); assertTrue(release.await(15, TimeUnit.SECONDS)); } throw moneyFailure(404); }).when(money).get(any());
+        var first = claimPayment();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stale = executor.submit(() -> context.getBean(PaymentFlow.class).resume(first));
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS)); expirePaymentLease(); var second = claimPayment();
+                assertEquals(PaymentWorkPhase.CONFIRM_PENDING, context.getBean(PaymentFlow.class).resume(second).phase());
+                tx().finish(second, false, Instant.now(), java.time.Duration.ofMinutes(15));
+            } finally { release.countDown(); }
+            assertEquals(PaymentWorkPhase.CONFIRM_PENDING, stale.get(15, TimeUnit.SECONDS).phase());
+        }
+        assertTrue(tx().finish(first, true, Instant.now(), java.time.Duration.ofMinutes(15)).isEmpty()); assertEquals(1, captures.get());
+    }
+    @Test void staleConfirmAfterLeaseLossCannotReverseSafeRefundOrReleaseCurrentClaim() throws Exception {
+        capture(); var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        doAnswer(call -> {
+            outside("stock-confirm"); entered.countDown(); assertTrue(release.await(15, TimeUnit.SECONDS));
+            if (!remoteStock.compareAndSet(StockReservationStatus.ACTIVE, StockReservationStatus.CONFIRMED)) throw stockFailure(409);
+            return reservation(StockReservationStatus.CONFIRMED);
+        }).when(inventory).confirm(any());
+        var first = claimPayment();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stale = executor.submit(() -> context.getBean(PaymentFlow.class).resume(first));
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS)); expirePaymentLease(); var second = claimPayment();
+                tx().resolution(id, PaymentWorkPhase.CONFIRM_PENDING, second.token());
+                assertEquals(PaymentWorkPhase.CANCEL_PAYMENT_PENDING, context.getBean(PaymentFlow.class).resume(second).phase());
+                assertEquals(PaymentWorkPhase.CLOSED, context.getBean(PaymentFlow.class).resume(second).phase());
+                assertEquals(second.token(), jdbc.queryForObject("SELECT claim_token FROM " + schema + ".payment_work", UUID.class));
+            } finally { release.countDown(); }
+            assertEquals(PaymentWorkPhase.CLOSED, stale.get(15, TimeUnit.SECONDS).phase());
+        }
+        assertTrue(tx().finish(first, true, Instant.now(), java.time.Duration.ofMinutes(15)).isEmpty());
+        assertEquals(1, refunds.get()); assertEquals(OrderStatus.CANCELLED, order().status());
+    }
+    @Test void confirmationWinningBeforeLeaseLossIsReconciledByNewOwnerWithoutRefund() throws Exception {
+        capture(); var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        doAnswer(call -> { outside("stock-confirm"); remoteStock.set(StockReservationStatus.CONFIRMED); entered.countDown();
+            assertTrue(release.await(15, TimeUnit.SECONDS)); return reservation(StockReservationStatus.CONFIRMED); }).when(inventory).confirm(any());
+        var first = claimPayment();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stale = executor.submit(() -> context.getBean(PaymentFlow.class).resume(first));
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS)); expirePaymentLease(); var second = claimPayment();
+                assertEquals(PaymentWorkPhase.DONE, context.getBean(PaymentFlow.class).resume(second).phase());
+                tx().finish(second, false, Instant.now(), java.time.Duration.ofMinutes(15));
+            } finally { release.countDown(); }
+            assertEquals(PaymentWorkPhase.DONE, stale.get(15, TimeUnit.SECONDS).phase());
+        }
+        assertTrue(tx().finish(first, true, Instant.now(), java.time.Duration.ofMinutes(15)).isEmpty());
+        assertEquals(OrderStatus.CONFIRMED, order().status()); assertEquals(0, refunds.get());
+    }
+    @Test void refundWinningBeforeLeaseLossIsReconciledOnceAndOldOwnerCannotClearNewClaim() throws Exception {
+        capture(); stockSafe(); var entered = new CountDownLatch(1); var release = new CountDownLatch(1); var cancels = new AtomicInteger();
+        doAnswer(call -> { var result = performCancel(); if (cancels.incrementAndGet() == 1) { entered.countDown();
+            assertTrue(release.await(15, TimeUnit.SECONDS)); } return result; }).when(money).cancel(any());
+        var first = claimPayment(); PaymentWorkClaim second;
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stale = executor.submit(() -> context.getBean(PaymentFlow.class).resume(first));
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS)); expirePaymentLease(); second = claimPayment();
+                assertEquals(PaymentWorkPhase.CLOSED, context.getBean(PaymentFlow.class).resume(second).phase());
+            } finally { release.countDown(); }
+            assertEquals(PaymentWorkPhase.CLOSED, stale.get(15, TimeUnit.SECONDS).phase());
+        }
+        assertTrue(tx().finish(first, true, Instant.now(), java.time.Duration.ofMinutes(15)).isEmpty());
+        assertEquals(second.token(), jdbc.queryForObject("SELECT claim_token FROM " + schema + ".payment_work", UUID.class));
+        tx().finish(second, false, Instant.now(), java.time.Duration.ofMinutes(15));
+        assertEquals(1, refunds.get()); assertEquals("REFUNDED", order().paymentStatus());
+    }
+    @Test void claimAndAttemptInvariantsAreEnforcedByV9WithoutChangingExistingProofs() {
+        assertThrows(org.springframework.dao.DataAccessException.class, () -> sql("UPDATE $schema.payment_work SET claim_token='" + UUID.randomUUID() + "'"));
+        assertThrows(org.springframework.dao.DataAccessException.class, () -> sql("UPDATE $schema.payment_work SET claimed_until=CURRENT_TIMESTAMP"));
+        assertThrows(org.springframework.dao.DataAccessException.class, () -> sql("UPDATE $schema.payment_work SET attempt_count=-1"));
+        assertNull(tx().get(id).payment()); assertEquals("PROCESSING", order().paymentStatus());
+        assertEquals("9", migrate(null).info().current().getVersion().getVersion());
+    }
+    @Test void overdueWarningIsThrottledDurablyAndCanRepeatAfterItsInterval() {
+        jdbc.update("UPDATE " + schema + ".payment_work SET created_at=?", java.sql.Timestamp.from(Instant.now().minusSeconds(3600)));
+        var now = Instant.now(); var first = claimPayment();
+        assertTrue(tx().finish(first, false, now, java.time.Duration.ofMinutes(15)).orElseThrow().warnOverdue());
+        restart(); var second = claimPayment();
+        assertFalse(tx().finish(second, false, now.plusSeconds(899), java.time.Duration.ofMinutes(15)).orElseThrow().warnOverdue());
+        var third = claimPayment();
+        assertTrue(tx().finish(third, false, now.plusSeconds(901), java.time.Duration.ofMinutes(15)).orElseThrow().warnOverdue());
+        assertEquals(PaymentWorkPhase.CAPTURE_PENDING, tx().get(id).phase()); verifyNoInteractions(money, inventory);
     }
 
     @EnableTransactionManagement

@@ -861,3 +861,60 @@ PaymentFlowPersistenceTests e os 30 cenários anteriores com JARs reais
 (13 checkout e 17 estoque). O bootJar atualizado e `git diff --cached --check`
 passaram. V8 aplicada exclusivamente em schemas temporários, sem modificar
 V1–V7, schema de outros serviços ou desabilitar asserções/testes.
+
+## Microtarefa 61 — recuperação financeira
+
+Operação/configuração em [PAYMENT_RECOVERY.md](PAYMENT_RECOVERY.md). V9
+incrementa V8 com claim/lease, contador persistido, aviso e índice de agenda,
+sem alterar migrations anteriores. A fixture financeira passa a validar o
+upgrade de V7 por V8/V9; a validação de estoque passa de V5 por V6–V9.
+
+Com PostgreSQL local, testes focados em `order-service`:
+
+```powershell
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*PaymentRecoveryJobTests' --tests '*PaymentFlowPersistenceTests' --tests '*StockRecoveryJobTests'
+```
+
+PaymentRecoveryJobTests cobre isolamento de falhas, logs sem conteúdo sensível
+ou claim token, limites positivos, desativação, scheduler real e convivência
+com StockRecoveryJob em um único scheduler com três threads. Cart/estoque/
+pagamento não precisam disputar uma única thread bloqueada em HTTP.
+
+PaymentFlowPersistenceTests acrescenta progresso por passagens do worker sem
+replay/JWT do utilizador, recuperação de resposta perdida em captura, confirm,
+abort e refund após reinício, disputa de claims, SKIP LOCKED em cada raiz na
+ordem global, backoff limitado e contador que não duplica o fallback.
+Verifica antecipação da agenda sem expirar localmente, avisos limitados e
+persistidos, continuidade com 1000 tentativas e uma hora de pendência, rollback
+do finish e diagnósticos de revisão sem mutações financeiras.
+
+Chamadas retidas durante troca de dono comprovam que o worker antigo não
+dispara captura após GET atrasado, reverte compensação ou limpa o claim atual.
+Confirmação e reembolso que já venceram remotamente são reconciliados pelo
+sucessor uma vez. Os testes usam PostgreSQL e contextos reais, clientes remotos
+simulados e o pool de fixture existente, preservando a verificação de ausência
+de transação durante HTTP. Processos financeiros reais de seis serviços ficam
+para a etapa 62.
+
+As primeiras passagens focadas exigiram corrigir a restauração de mocks que já
+lançavam exceção e acrescentar EntityManagerFactory simulado ao contexto de
+teste do scheduler, conforme o padrão do teste de estoque. As reexecuções
+focadas passaram, preservando as asserções.
+
+Validação final da etapa 61 em 2026-11-01, em `order-service`:
+
+```powershell
+.\gradlew.bat bootJar --offline --no-daemon
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+$env:SHOPSPHERE_TEST_CHECKOUT_INTEGRATION = 'true'
+$env:SHOPSPHERE_TEST_STOCK_INTEGRATION = 'true'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+bootJar aprovado; suíte completa aprovada em 8m59s: **486 testes**, sem falhas,
+erros ou ignorados, conferidos nos XMLs JUnit. Inclui 63 cenários de
+PaymentFlowPersistenceTests, sete de PaymentRecoveryJobTests e os 30 cenários
+anteriores com processos reais (13 checkout e 17 estoque). A V9 foi aplicada
+somente nos schemas temporários dos testes; V1–V8 preservadas. `git diff --check`
+aprovado. Nenhuma integração financeira de seis JARs foi declarada nesta etapa.

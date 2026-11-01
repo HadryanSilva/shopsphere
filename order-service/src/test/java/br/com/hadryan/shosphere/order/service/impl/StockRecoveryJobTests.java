@@ -102,7 +102,7 @@ class StockRecoveryJobTests {
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     var scheduler = context.getBean(org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler.class);
-                    assertEquals(2, scheduler.getScheduledThreadPoolExecutor().getCorePoolSize());
+                    assertEquals(3, scheduler.getScheduledThreadPoolExecutor().getCorePoolSize());
                     scheduler.schedule(() -> {
                         blocked.countDown();
                         try { release.await(5, TimeUnit.SECONDS); }

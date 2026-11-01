@@ -50,8 +50,8 @@ public class StockRecoveryJob {
     @ConditionalOnMissingBean(TaskScheduler.class)
     TaskScheduler taskScheduler() {
         var scheduler = new ThreadPoolTaskScheduler();
-        // Cart completion and stock recovery must not share a single blocked HTTP execution thread.
-        scheduler.setPoolSize(2);
+        // Cart, stock and payment recovery each need capacity while another job waits for HTTP.
+        scheduler.setPoolSize(3);
         scheduler.setThreadNamePrefix("checkout-recovery-");
         return scheduler;
     }

@@ -73,9 +73,9 @@ pode expirar no Inventory. O coordenador terá de consultar e resolver esse
 estado remoto, seguindo as provas exigidas no contrato, antes de concluir ou
 compensar dinheiro. O worker antigo não reassume a reserva por conta própria.
 
-O [coordenador da etapa 60](PAYMENT_FLOW.md) implementa essas transições e provas
-por retomada explícita do serviço interno. O worker financeiro permanece para
-a etapa 61; o PUT inicial continua sem aguardar HTTP remoto.
+O [coordenador da etapa 60](PAYMENT_FLOW.md) implementa essas transições e provas;
+a [microtarefa 61](PAYMENT_RECOVERY.md) acrescenta a retomada automática por worker.
+O PUT inicial continua sem aguardar HTTP remoto.
 
 Nenhuma mudança no Payment, Inventory, Cart, Catalog, frontend, autenticação,
 dependências ou configuração Keycloak. Validação em [TESTING.md](TESTING.md).

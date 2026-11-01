@@ -252,7 +252,23 @@ registrados em [order-service/TESTING.md](order-service/TESTING.md).
 Sem worker financeiro automático nesta etapa, novo endpoint, alteração de
 outros serviços, frontend, Keycloak ou dependências. Fluxo e limites em
 [order-service/PAYMENT_FLOW.md](order-service/PAYMENT_FLOW.md).
-A próxima é a **61 — Recuperar capturas, confirmações e compensações**.
+A microtarefa **61 — Recuperar capturas, confirmações e compensações** foi
+concluída: worker financeiro com agenda persistida, claims/leases e revalidação
+de token/prazo antes de novas chamadas e ao gravar resultados. V9 acrescenta
+metadados de recuperação e índice de agenda, preservando V1–V8 e as provas.
+Backoff limitado, antecipação pela data futura da reserva e avisos persistidos
+não abandonam cobrança/reembolso por idade ou número de tentativas. Revisão
+faz somente consultas diagnósticas; execuções antigas não limpam o claim atual.
+Scheduler compartilhado passa a três threads para Cart, estoque e pagamento.
+Validação final: **486 testes Order aprovados**, sem falhas/erros/ignorados,
+incluindo 63 cenários financeiros com PostgreSQL, sete do novo job e os 30
+cenários anteriores de processos reais. bootJar e diff --check aprovados;
+V9 somente em schemas temporários. Sem mudanças de contratos HTTP, segurança,
+dependências, outros serviços ou frontend. Detalhes em
+[order-service/PAYMENT_RECOVERY.md](order-service/PAYMENT_RECOVERY.md) e
+[order-service/TESTING.md](order-service/TESTING.md).
+A próxima é a **62 — Validar integração e documentar operação**, incluindo o
+fluxo financeiro com seis JARs reais.
 
 ## Validação PostgreSQL
 

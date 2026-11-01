@@ -5,7 +5,8 @@ sobre a [aceitação e transferência](PAYMENT_HANDOFF.md) da etapa 59.
 PaymentFlow.resume(orderId) retoma um trabalho persistido, uma fase por chamada.
 O PUT público continua fazendo apenas o commit local e respondendo 202; não
 aguarda nem dispara HTTP financeiro. Agendamento, claims/leases, contagem de
-tentativas e backoff pertencem à etapa 61. Não há endpoint manual novo.
+tentativas e backoff estão descritos na [recuperação da etapa 61](PAYMENT_RECOVERY.md).
+Não há endpoint manual novo.
 
 ## Decisões e provas
 

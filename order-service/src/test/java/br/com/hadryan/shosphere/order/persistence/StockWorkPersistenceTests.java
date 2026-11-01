@@ -126,7 +126,7 @@ class StockWorkPersistenceTests {
     private void sql(String sql) { jdbc.execute(sql.replace("$schema", schema)); }
 
     @Test void upgradeDoesNotEnrollExistingOrPreviousCreationFlow() {
-        assertEquals("8", flyway(null).info().current().getVersion().getVersion());
+        assertEquals("9", flyway(null).info().current().getVersion().getVersion());
         assertEquals(0, flyway(null).migrate().migrationsExecuted);
         assertEquals(0, count("stock_work"));
         assertEquals(0, count("payment_work"));
@@ -539,7 +539,7 @@ class StockWorkPersistenceTests {
                     + "next_attempt_at,attempt_count,created_at,updated_at) VALUES (?,?,'ABORT_PENDING',true,'RESERVATION_REJECTED',CURRENT_TIMESTAMP,3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", id, checkoutId);
             var upgraded = Flyway.configure().dataSource(dataSource).schemas(upgradeSchema).defaultSchema(upgradeSchema)
                     .locations("classpath:db/migration").load();
-            assertEquals(3, upgraded.migrate().migrationsExecuted);
+            assertEquals(4, upgraded.migrate().migrationsExecuted);
             assertTrue(upgraded.validateWithResult().validationSuccessful);
             schema = upgradeSchema; openContext(); // Validate new entity columns against the upgraded schema.
             var work = stock().get(id);
