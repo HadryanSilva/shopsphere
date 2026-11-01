@@ -12,3 +12,9 @@ spring:
         jwt:
           issuer-uri: ${SHOPSPHERE_JWT_ISSUER:http://localhost:8180/realms/shopsphere}
           audiences: ${SHOPSPHERE_JWT_AUDIENCE:shopsphere-api}
+
+payment:
+  simulator:
+    enabled: true
+    capture-result: ${SHOPSPHERE_PAYMENT_SIMULATOR_CAPTURE_RESULT:CAPTURED}
+    refund-result: ${SHOPSPHERE_PAYMENT_SIMULATOR_REFUND_RESULT:REFUNDED}

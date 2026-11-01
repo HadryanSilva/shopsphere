@@ -208,7 +208,20 @@ V1 aplicada somente em schemas temporários; ainda sem entidades JPA, casos de
 uso ou endpoints financeiros. Sem integração Order, mudança no Gateway ou
 frontend. Detalhes em [payment-service/README.md](payment-service/README.md)
 e validação em [payment-service/TESTING.md](payment-service/TESTING.md).
-A próxima é a **58 — Implementar captura e compensação simuladas duráveis**.
+A microtarefa **58 — Implementar captura e compensação simuladas duráveis** foi
+concluída: PUT/GET/cancel internos, intenção monetária imutável por pedido/azp,
+captura e reembolso integral com movimentos únicos, barreira anterior à captura
+e decisões persistidas antes de concluir o efeito simulado. Criação concorrente
+trata ambos os índices únicos; bloqueio da raiz serializa captura/cancelamento.
+Simulador habilitado no perfil dev, com controles locais de recusa, pendência
+e indisponibilidade, sem campos HTTP para escolher resultado.
+Suíte completa com PostgreSQL e JWT real Keycloak: 80 aprovados, sem falhas ou
+ignorados; inclui 24 testes do protocolo, concorrência, rollback após movimento,
+reinício de contexto e controllers reais. bootJar e diff --check aprovados.
+Sem migration nova ou alteração da V1, de outros serviços ou do frontend.
+Detalhes em [payment-service/README.md](payment-service/README.md) e
+[payment-service/TESTING.md](payment-service/TESTING.md).
+A próxima é a **59 — Persistir pagamento e transferir coordenação no Order**.
 
 ## Validação PostgreSQL
 
