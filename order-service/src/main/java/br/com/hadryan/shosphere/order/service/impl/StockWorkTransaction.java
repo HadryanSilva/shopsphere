@@ -28,6 +28,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional(propagation = Propagation.REQUIRES_NEW)
 public class StockWorkTransaction {
+    private static final List<StockWorkPhase> RECOVERABLE_PHASES = List.of(StockWorkPhase.WAITING_CART,
+            StockWorkPhase.RESERVE_PENDING, StockWorkPhase.RESERVED, StockWorkPhase.ABORT_PENDING, StockWorkPhase.REVIEW_REQUIRED);
     private final StockWorkRepository works;
     private final CheckoutIntentRepository intents;
     @PersistenceContext private EntityManager entityManager;
@@ -48,10 +50,10 @@ public class StockWorkTransaction {
 
     public List<UUID> due(Instant now, int limit) {
         Assert.isTrue(limit > 0, "Stock recovery batch size must be positive");
-        return entityManager.createQuery("select w.orderId from StockWork w where w.phase <> :closed "
+        return entityManager.createQuery("select w.orderId from StockWork w where w.phase in :phases "
                         + "and w.nextAttemptAt <= :now and (w.claimedUntil is null or w.claimedUntil <= :now) "
                         + "order by w.nextAttemptAt, w.orderId", UUID.class)
-                .setParameter("closed", StockWorkPhase.CLOSED).setParameter("now", now)
+                .setParameter("phases", RECOVERABLE_PHASES).setParameter("now", now)
                 .setLockMode(LockModeType.PESSIMISTIC_WRITE).setHint("jakarta.persistence.lock.timeout", -2)
                 .setMaxResults(limit).getResultList();
     }
@@ -59,9 +61,9 @@ public class StockWorkTransaction {
     public Optional<StockWorkClaim> claim(UUID orderId, Instant now, Duration lease) {
         Assert.isTrue(lease.isPositive(), "Stock recovery lease must be positive");
         var matches = entityManager.createQuery("select w from StockWork w where w.orderId = :id "
-                        + "and w.phase <> :closed and w.nextAttemptAt <= :now "
+                        + "and w.phase in :phases and w.nextAttemptAt <= :now "
                         + "and (w.claimedUntil is null or w.claimedUntil <= :now)", StockWork.class)
-                .setParameter("id", orderId).setParameter("closed", StockWorkPhase.CLOSED).setParameter("now", now)
+                .setParameter("id", orderId).setParameter("phases", RECOVERABLE_PHASES).setParameter("now", now)
                 .setLockMode(LockModeType.PESSIMISTIC_WRITE).setHint("jakarta.persistence.lock.timeout", -2).getResultList();
         if (matches.isEmpty()) return Optional.empty();
         var work = matches.getFirst();
@@ -91,7 +93,7 @@ public class StockWorkTransaction {
     public StockWorkSnapshot retry(UUID orderId, StockWorkPhase expected, StockFailureCategory category) {
         var work = lock(orderId);
         var order = order(work);
-        if (work.getPhase() == expected && work.getPhase() != StockWorkPhase.CLOSED) retry(work, category, Instant.now());
+        if (work.getPhase() == expected && work.isManagedByStock()) retry(work, category, Instant.now());
         return snapshot(work, order);
     }
 
@@ -134,7 +136,7 @@ public class StockWorkTransaction {
         Objects.requireNonNull(nextAttemptAt);
         var work = lock(orderId);
         var order = order(work);
-        if (work.getPhase() != StockWorkPhase.CLOSED && work.getPhase() != StockWorkPhase.REVIEW_REQUIRED) {
+        if (work.isManagedByStock() && work.getPhase() != StockWorkPhase.REVIEW_REQUIRED) {
             if (!valid(order, observation)) work.review(StockFailureCategory.INVALID_UPSTREAM_RESPONSE);
             else if (!mutableOrder(order)) work.review(StockFailureCategory.INVALID_UPSTREAM_RESPONSE);
             else {
@@ -150,7 +152,7 @@ public class StockWorkTransaction {
     public StockWorkSnapshot aborted(UUID orderId, UUID proofOrderId, StockReservationObservation reservation) {
         var work = lock(orderId);
         var order = order(work);
-        if (work.getPhase() == StockWorkPhase.CLOSED || work.getPhase() == StockWorkPhase.REVIEW_REQUIRED)
+        if (!work.isManagedByStock() || work.getPhase() == StockWorkPhase.REVIEW_REQUIRED)
             return snapshot(work, order);
         if (!orderId.equals(proofOrderId) || !mutableOrder(order) || work.getPhase() != StockWorkPhase.ABORT_PENDING
                 || reservation == null && work.getReservationStatus() != null

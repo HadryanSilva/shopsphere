@@ -26,6 +26,6 @@ public record OrderResponse(
                 item.getUnitPrice(), item.getLineTotal())).toList();
         return new OrderResponse(order.getId(), order.getStatus(), items, order.getSubtotal(),
                 order.getDiscountAmount(), order.getShippingAmount(), order.getTotalAmount(),
-                order.getCurrency(), null, order.getUpdatedAt());
+                order.getCurrency(), order.getPaymentStatus() == null ? null : order.getPaymentStatus().name(), order.getUpdatedAt());
     }
 }

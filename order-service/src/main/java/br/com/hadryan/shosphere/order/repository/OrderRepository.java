@@ -10,6 +10,8 @@ import java.util.Optional;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, UUID> {
+    boolean existsByIdAndCustomerId(UUID id, UUID customerId);
+
     @EntityGraph(attributePaths = "items")
     Optional<Order> findByIdAndCustomerId(UUID id, UUID customerId);
 

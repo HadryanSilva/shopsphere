@@ -221,7 +221,21 @@ reinício de contexto e controllers reais. bootJar e diff --check aprovados.
 Sem migration nova ou alteração da V1, de outros serviços ou do frontend.
 Detalhes em [payment-service/README.md](payment-service/README.md) e
 [payment-service/TESTING.md](payment-service/TESTING.md).
-A próxima é a **59 — Persistir pagamento e transferir coordenação no Order**.
+A microtarefa **59 — Persistir pagamento e transferir coordenação no Order** foi
+concluída: PUT público por proprietário com corpo vazio, aceite 202 e replay
+terminal 200, trabalho único com termos do snapshot e paymentStatus PROCESSING.
+V7 cria payment_work/payment_status e a transferência atômica para PAYMENT_PENDING,
+invalida o claim e impede seleção/mutação pelo worker antigo, inclusive após
+perda de lease e com duas instâncias do contexto Order. GET e replay do checkout
+preservam o snapshot e mostram o estado público atual.
+Validação: Order 377 e Gateway 96 testes aprovados, sem falhas ou ignorados;
+inclui os 30 cenários reais anteriores de checkout/estoque. bootJar e diff --check
+aprovados; V7 somente em schemas de teste, V1–V6 intactas.
+Sem chamadas financeiras: aceites permanecem PROCESSING até as etapas 60–61.
+Sem alteração de produção no Gateway, outros serviços ou frontend.
+Detalhes em [order-service/PAYMENT_HANDOFF.md](order-service/PAYMENT_HANDOFF.md)
+e [order-service/TESTING.md](order-service/TESTING.md).
+A próxima é a **60 — Integrar coordenador Order–Payment–Inventory**.
 
 ## Validação PostgreSQL
 

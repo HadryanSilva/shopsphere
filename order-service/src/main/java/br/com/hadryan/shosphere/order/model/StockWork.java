@@ -64,7 +64,7 @@ public class StockWork {
 
     public void requestAbort(StockWorkReason reason) {
         Objects.requireNonNull(reason);
-        if (phase == StockWorkPhase.CLOSED || phase == StockWorkPhase.REVIEW_REQUIRED) return;
+        if (!isManagedByStock() || phase == StockWorkPhase.REVIEW_REQUIRED) return;
         if (!abortRequested) {
             abortRequested = true;
             this.reason = reason;
@@ -81,7 +81,7 @@ public class StockWork {
         Objects.requireNonNull(expiresAt);
         Objects.requireNonNull(remoteUpdatedAt);
         Objects.requireNonNull(nextAttemptAt);
-        if (phase == StockWorkPhase.CLOSED || phase == StockWorkPhase.REVIEW_REQUIRED) return;
+        if (!isManagedByStock() || phase == StockWorkPhase.REVIEW_REQUIRED) return;
         if (phase == StockWorkPhase.WAITING_CART) throw new IllegalStateException("Cart is not completed");
         if (!createdAt.isBefore(expiresAt) || remoteUpdatedAt.isBefore(createdAt)
                 || reservationCreatedAt != null && (!reservationCreatedAt.equals(createdAt)
@@ -112,7 +112,7 @@ public class StockWork {
     }
 
     public void abortedWithoutReservation() {
-        if (phase == StockWorkPhase.CLOSED) return;
+        if (!isManagedByStock()) return;
         if (phase != StockWorkPhase.ABORT_PENDING || reservationStatus != null)
             throw new IllegalStateException("Abort proof conflicts with local state");
         close();
@@ -120,7 +120,7 @@ public class StockWork {
 
     public void review(StockFailureCategory category) {
         Objects.requireNonNull(category);
-        if (phase == StockWorkPhase.CLOSED) return;
+        if (!isManagedByStock()) return;
         phase = StockWorkPhase.REVIEW_REQUIRED;
         lastFailureCategory = category;
         updatedAt = now();
@@ -130,7 +130,7 @@ public class StockWork {
     public void recordFailure(StockWorkPhase expected, StockFailureCategory category, Instant nextAttemptAt) {
         Objects.requireNonNull(category);
         Objects.requireNonNull(nextAttemptAt);
-        if (phase != expected || phase == StockWorkPhase.CLOSED) return;
+        if (phase != expected || !isManagedByStock()) return;
         var attempts = Math.addExact(attemptCount, 1L);
         this.nextAttemptAt = micros(nextAttemptAt);
         attemptCount = attempts;
@@ -139,7 +139,7 @@ public class StockWork {
     }
 
     public void claim(UUID token, Instant until) {
-        if (phase == StockWorkPhase.CLOSED) throw new IllegalStateException("Stock work is closed");
+        if (!isManagedByStock()) throw new IllegalStateException("Stock work is not managed by stock");
         claimToken = Objects.requireNonNull(token);
         claimedUntil = micros(Objects.requireNonNull(until));
     }
@@ -152,10 +152,22 @@ public class StockWork {
     }
 
     public void schedule(Instant nextAttemptAt) {
-        if (phase != StockWorkPhase.CLOSED) this.nextAttemptAt = micros(Objects.requireNonNull(nextAttemptAt));
+        if (isManagedByStock()) this.nextAttemptAt = micros(Objects.requireNonNull(nextAttemptAt));
     }
 
-    public void warned(Instant at) { lastWarningAt = micros(Objects.requireNonNull(at)); }
+    public void warned(Instant at) { if (isManagedByStock()) lastWarningAt = micros(Objects.requireNonNull(at)); }
+
+    public boolean isManagedByStock() { return phase != StockWorkPhase.CLOSED && phase != StockWorkPhase.PAYMENT_PENDING; }
+
+    public void transferToPayment() {
+        if (phase != StockWorkPhase.RESERVED || abortRequested || reason != null || reservationStatus != StockReservationStatus.ACTIVE)
+            throw new IllegalStateException("Stock work is not eligible for payment");
+        phase = StockWorkPhase.PAYMENT_PENDING;
+        nextAttemptAt = null;
+        lastFailureCategory = null;
+        releaseClaim();
+        updatedAt = now();
+    }
 
     private void close() {
         phase = StockWorkPhase.CLOSED;

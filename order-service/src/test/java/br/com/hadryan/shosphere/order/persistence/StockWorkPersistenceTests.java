@@ -126,9 +126,10 @@ class StockWorkPersistenceTests {
     private void sql(String sql) { jdbc.execute(sql.replace("$schema", schema)); }
 
     @Test void upgradeDoesNotEnrollExistingOrPreviousCreationFlow() {
-        assertEquals("6", flyway(null).info().current().getVersion().getVersion());
+        assertEquals("7", flyway(null).info().current().getVersion().getVersion());
         assertEquals(0, flyway(null).migrate().migrationsExecuted);
         assertEquals(0, count("stock_work"));
+        assertEquals(0, count("payment_work"));
         assertEquals(new BigDecimal("25.00"), response(existingOrder).totalAmount());
         var previous = context.getBean(CreateOrderTransaction.class).execute(order());
         assertEquals(OrderStatus.PENDING_STOCK, previous.status());
@@ -538,7 +539,7 @@ class StockWorkPersistenceTests {
                     + "next_attempt_at,attempt_count,created_at,updated_at) VALUES (?,?,'ABORT_PENDING',true,'RESERVATION_REJECTED',CURRENT_TIMESTAMP,3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)", id, checkoutId);
             var upgraded = Flyway.configure().dataSource(dataSource).schemas(upgradeSchema).defaultSchema(upgradeSchema)
                     .locations("classpath:db/migration").load();
-            assertEquals(1, upgraded.migrate().migrationsExecuted);
+            assertEquals(2, upgraded.migrate().migrationsExecuted);
             assertTrue(upgraded.validateWithResult().validationSuccessful);
             schema = upgradeSchema; openContext(); // Validate new entity columns against the upgraded schema.
             var work = stock().get(id);
@@ -786,9 +787,223 @@ class StockWorkPersistenceTests {
         assertEquals(OrderStatus.CANCELLED, response(id).status());
     }
 
+    private OrderPaymentTransaction payment() { return context.getBean(OrderPaymentTransaction.class); }
+    private UUID payable() { var id = ready(); observe(id, StockReservationStatus.ACTIVE); return id; }
+
+    @Test void paymentHandoffCommitsSnapshotPublicStateAndClaimInvalidationTogether() {
+        var id = payable(); var before = response(id);
+        var claim = stock().claim(id, Instant.now(), Duration.ofSeconds(60)).orElseThrow();
+        var accepted = payment().request(customer, id);
+        assertFalse(accepted.terminal()); assertEquals("PROCESSING", accepted.order().paymentStatus());
+        assertEquals(OrderStatus.PENDING_PAYMENT, accepted.order().status());
+        assertEquals(before.items(), accepted.order().items()); assertEquals(before.totalAmount(), accepted.order().totalAmount());
+        assertEquals(before.currency(), accepted.order().currency()); assertEquals(accepted.order(), response(id));
+        var work = stock().get(id); assertEquals(StockWorkPhase.PAYMENT_PENDING, work.phase());
+        assertFalse(work.abortRequested()); assertNull(work.nextAttemptAt());
+        assertTrue(stock().finish(claim, true, Instant.now().plusSeconds(120), Duration.ofMinutes(15)).isEmpty());
+        assertTrue(stock().claim(id, Instant.now().plusSeconds(120), Duration.ofSeconds(60)).isEmpty());
+        assertTrue(stock().due(Instant.now().plusSeconds(120), 50).isEmpty());
+        var snapshot = context.getBean(PaymentWorkRepository.class).findById(id).orElseThrow();
+        assertEquals(PaymentWorkPhase.CAPTURE_PENDING, snapshot.getPhase()); assertEquals(before.totalAmount(), snapshot.getAmount());
+        assertEquals("EUR", snapshot.getCurrency()); assertNotNull(snapshot.getNextAttemptAt());
+        assertEquals(1, count("payment_work")); verifyNoInteractions(inventory);
+        assertEquals(CheckoutIntentStatus.COMPLETED, checkout().get(work.checkoutId()).status());
+        assertEquals(accepted.order(), checkout().persistOrder(work.checkoutId(), order()));
+    }
+
+    @Test void concurrentPaymentRequestsCreateOneWorkAndReplayWithoutChangingVersionsOrDates() throws Exception {
+        var id = payable();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var gate = new CountDownLatch(1); var futures = new ArrayList<Future<OrderPaymentTransaction.Result>>();
+            for (int n = 0; n < 8; n++) futures.add(executor.submit(() -> { gate.await(); return payment().request(customer, id); }));
+            gate.countDown(); var first = futures.getFirst().get(15, TimeUnit.SECONDS);
+            for (var future : futures) assertEquals(first, future.get(15, TimeUnit.SECONDS));
+            var version = jdbc.queryForObject("SELECT version FROM " + schema + ".orders WHERE id=?", Long.class, id);
+            assertEquals(first, payment().request(customer, id));
+            assertEquals(version, jdbc.queryForObject("SELECT version FROM " + schema + ".orders WHERE id=?", Long.class, id));
+        }
+        assertEquals(1, count("payment_work")); verifyNoInteractions(inventory);
+    }
+
+    @Test void restartRetainsHandoffAndHistoricalOrdersRemainUnenrolled() {
+        var id = payable(); var accepted = payment().request(customer, id);
+        context.close(); openContext();
+        assertEquals(accepted, payment().request(customer, id)); assertEquals(accepted.order(), response(id));
+        assertEquals(StockWorkPhase.PAYMENT_PENDING, flow().resume(id).phase()); verifyNoInteractions(inventory);
+        assertNull(response(existingOrder).paymentStatus());
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> payment().request(customer, existingOrder)).getStatusCode().value());
+        assertEquals(1, count("payment_work"));
+    }
+
+    @Test void missingAndOtherOwnerNeverCreateWork() {
+        var id = payable();
+        for (var target : List.of(id, UUID.randomUUID()))
+            assertEquals(404, assertThrows(ResponseStatusException.class, () -> payment().request(UUID.randomUUID(), target)).getStatusCode().value());
+        assertEquals(0, count("payment_work")); assertNull(response(id).paymentStatus());
+        assertEquals(StockWorkPhase.RESERVED, stock().get(id).phase());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"PENDING_STOCK", "CONFIRMED", "CANCELLED", "SHIPPED", "DELIVERED", "COMPLETED"})
+    void incompatibleOrderStatusDoesNotTransferOrCreatePayment(String status) {
+        var id = payable(); sql("UPDATE $schema.orders SET status='" + status + "' WHERE id='" + id + "'");
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> payment().request(customer, id)).getStatusCode().value());
+        assertEquals(0, count("payment_work")); assertNull(response(id).paymentStatus());
+        assertEquals(StockWorkPhase.RESERVED, stock().get(id).phase());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"WAITING_CART", "RESERVE_PENDING", "ABORT_PENDING", "REVIEW_REQUIRED", "CLOSED"})
+    void incompatibleStockPhaseDoesNotStartPayment(String phase) {
+        var id = persist().id();
+        if (!phase.equals("WAITING_CART")) {
+            checkout().completed(stock().get(id).checkoutId()); stock().cartCompleted(id);
+            if (phase.equals("ABORT_PENDING") || phase.equals("CLOSED")) {
+                stock().requestAbort(id, StockWorkReason.RESERVATION_REJECTED);
+                if (phase.equals("CLOSED")) stock().aborted(id, id, null);
+            } else if (phase.equals("REVIEW_REQUIRED")) stock().review(id, StockFailureCategory.INVALID_UPSTREAM_RESPONSE);
+        }
+        sql("UPDATE $schema.orders SET status='PENDING_PAYMENT' WHERE id='" + id + "'");
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> payment().request(customer, id)).getStatusCode().value());
+        assertEquals(StockWorkPhase.valueOf(phase), stock().get(id).phase()); assertEquals(0, count("payment_work"));
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"total_amount=0", "currency='USD'"})
+    void invalidPersistedFinancialTermsAreNotAccepted(String change) {
+        var id = payable(); sql("UPDATE $schema.orders SET " + change + " WHERE id='" + id + "'");
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> payment().request(customer, id)).getStatusCode().value());
+        assertEquals(StockWorkPhase.RESERVED, stock().get(id).phase()); assertEquals(0, count("payment_work"));
+    }
+
+    @Test void paymentInsertFailureRollsBackPublicStateHandoffAndClaimInvalidation() {
+        var id = payable(); var before = response(id);
+        var claim = stock().claim(id, Instant.now(), Duration.ofSeconds(60)).orElseThrow(); var work = stock().get(id);
+        sql("ALTER TABLE $schema.payment_work ADD CONSTRAINT reject_payment CHECK (amount <> 25)");
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> payment().request(customer, id));
+        assertEquals(before, response(id)); assertEquals(work, stock().get(id)); assertEquals(0, count("payment_work"));
+        var metadata = jdbc.queryForObject("SELECT claim_token FROM " + schema + ".stock_work WHERE order_id=?", UUID.class, id);
+        assertEquals(claim.token(), metadata);
+        sql("ALTER TABLE $schema.payment_work DROP CONSTRAINT reject_payment");
+        assertEquals("PROCESSING", payment().request(customer, id).order().paymentStatus());
+    }
+
+    @Test void oldStockTransitionsAfterHandoffCannotReviewAbortCancelOrReschedule() {
+        var id = payable(); payment().request(customer, id); var accepted = response(id); var before = stock().get(id);
+        stock().observe(id, null, Instant.now()); stock().observe(id, observation(id, StockReservationStatus.CONFIRMED), Instant.now());
+        stock().observe(id, observation(id, StockReservationStatus.EXPIRED), Instant.now());
+        stock().requestAbort(id, StockWorkReason.RESERVATION_EXPIRED); stock().review(id, StockFailureCategory.INVALID_UPSTREAM_RESPONSE);
+        stock().aborted(id, id, null); stock().retry(id, StockWorkPhase.PAYMENT_PENDING, StockFailureCategory.UPSTREAM_UNAVAILABLE);
+        stock().recordFailure(id, StockWorkPhase.PAYMENT_PENDING, StockFailureCategory.PERSISTENCE_FAILURE, Instant.now());
+        assertEquals(before, flow().resume(id)); assertEquals(accepted, response(id)); verifyNoInteractions(inventory);
+    }
+
+    @Test void stockTransferFailureRollsBackPaymentInsertAndPublicStatus() {
+        var id = payable(); var before = response(id); var work = stock().get(id);
+        sql("ALTER TABLE $schema.stock_work ADD CONSTRAINT reject_transfer CHECK (phase <> 'PAYMENT_PENDING')");
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> payment().request(customer, id));
+        assertEquals(before, response(id)); assertEquals(work, stock().get(id)); assertEquals(0, count("payment_work"));
+        sql("ALTER TABLE $schema.stock_work DROP CONSTRAINT reject_transfer");
+        assertEquals("PROCESSING", payment().request(customer, id).order().paymentStatus());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"ACTIVE", "EXPIRED", "CONFIRMED", "invalid", "unavailable"})
+    void workerReturningAfterLeaseAndHandoffCannotAbortOrOverwrite(String outcome) throws Exception {
+        var id = payable(); var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        when(inventory.get(any())).thenAnswer(call -> {
+            entered.countDown(); assertTrue(release.await(15, TimeUnit.SECONDS));
+            if (outcome.equals("invalid")) throw new StockIntegrationFailure(502, StockFailureCategory.INVALID_UPSTREAM_RESPONSE);
+            if (outcome.equals("unavailable")) throw new StockIntegrationFailure(503, StockFailureCategory.UPSTREAM_UNAVAILABLE);
+            return observation(id, StockReservationStatus.valueOf(outcome));
+        });
+        var originalContext = context;
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stale = executor.submit(() -> recovery(50).runOnce());
+            OrderResponse accepted;
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS));
+                sql("UPDATE $schema.stock_work SET claimed_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE order_id='" + id + "'");
+                openContext(); // A second Order context/EntityManagerFactory takes over while the first worker is paused.
+                accepted = payment().request(customer, id).order();
+                recovery(50).runOnce();
+            } finally { release.countDown(); }
+            stale.get(15, TimeUnit.SECONDS);
+            assertEquals(accepted, response(id)); assertEquals(StockWorkPhase.PAYMENT_PENDING, stock().get(id).phase());
+        } finally { originalContext.close(); }
+        verify(inventory).get(any()); verify(inventory, never()).abort(any()); verify(inventory, never()).reserve(any());
+    }
+
+    @Test void racingAbortAndPaymentHasOneWinnerAndNeverCompetingCoordinators() throws Exception {
+        var id = payable(); var gate = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var request = executor.submit(() -> { gate.await();
+                try { return payment().request(customer, id); }
+                catch (ResponseStatusException failure) { assertEquals(409, failure.getStatusCode().value()); return null; }
+            });
+            var abort = executor.submit(() -> { gate.await(); return stock().requestAbort(id, StockWorkReason.RESERVATION_EXPIRED); });
+            gate.countDown(); var accepted = request.get(15, TimeUnit.SECONDS); var finalWork = abort.get(15, TimeUnit.SECONDS);
+            if (accepted == null) {
+                assertEquals(StockWorkPhase.ABORT_PENDING, finalWork.phase()); assertEquals(0, count("payment_work"));
+            } else {
+                assertEquals(StockWorkPhase.PAYMENT_PENDING, finalWork.phase()); assertFalse(finalWork.abortRequested());
+                assertEquals(1, count("payment_work"));
+            }
+        }
+    }
+
+    @Test void terminalPaymentWorkReplaysCurrentOrderWithoutReopening() {
+        var id = payable(); payment().request(customer, id);
+        sql("UPDATE $schema.payment_work SET phase='DONE',next_attempt_at=NULL WHERE order_id='" + id + "'");
+        sql("UPDATE $schema.orders SET status='CONFIRMED',payment_status='CAPTURED' WHERE id='" + id + "'");
+        var replay = payment().request(customer, id);
+        assertTrue(replay.terminal()); assertEquals(OrderStatus.CONFIRMED, replay.order().status());
+        assertEquals("CAPTURED", replay.order().paymentStatus()); assertEquals(1, count("payment_work"));
+    }
+
+    @Test void paymentHttpAndGetUsePersistedOwnerAndSnapshotIncludingAdminIsolation() throws Exception {
+        var id = payable();
+        try (var web = new org.springframework.web.context.support.AnnotationConfigWebApplicationContext()) {
+            web.setParent(context); web.setServletContext(new org.springframework.mock.web.MockServletContext());
+            web.register(PaymentMvcConfig.class, br.com.hadryan.shosphere.order.config.SecurityConfig.class,
+                    br.com.hadryan.shosphere.order.controller.OrderPaymentController.class,
+                    br.com.hadryan.shosphere.order.controller.OrderController.class,
+                    br.com.hadryan.shosphere.order.exception.ApiExceptionHandler.class);
+            web.refresh();
+            var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup(web)
+                    .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity()).build();
+            var path = "/api/v1/orders/" + id;
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path + "/payment")
+                            .header("Authorization", "Bearer " + customer))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isAccepted())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.paymentStatus").value("PROCESSING"));
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path).header("Authorization", "Bearer " + customer))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.paymentStatus").value("PROCESSING"))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].productName").value("Financial snapshot"));
+            for (var target : List.of(id, UUID.randomUUID()))
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/v1/orders/" + target + "/payment")
+                                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
+                                        .jwt(token -> token.subject(UUID.randomUUID().toString()))
+                                        .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+            verifyNoInteractions(web.getBean(br.com.hadryan.shosphere.order.service.CreateOrderUseCase.class), inventory);
+            assertEquals(1, count("payment_work"));
+        }
+    }
+
+    @org.springframework.boot.test.context.TestConfiguration
+    @org.springframework.web.servlet.config.annotation.EnableWebMvc
+    @org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
+    static class PaymentMvcConfig {
+        @Bean tools.jackson.databind.json.JsonMapper jsonMapper() { return tools.jackson.databind.json.JsonMapper.builder().build(); }
+        @Bean org.springframework.security.oauth2.jwt.JwtDecoder jwtDecoder() {
+            return token -> org.springframework.security.oauth2.jwt.Jwt.withTokenValue(token).header("alg", "RS256").subject(token).build();
+        }
+        @Bean br.com.hadryan.shosphere.order.service.CreateOrderUseCase createOrder() {
+            return mock(br.com.hadryan.shosphere.order.service.CreateOrderUseCase.class);
+        }
+    }
+
     @EnableTransactionManagement
     @EnableJpaRepositories(basePackageClasses = OrderRepository.class)
-    @Import({CheckoutIntentTransaction.class, StockWorkTransaction.class, StockReservationFlow.class, CreateOrderTransaction.class, GetOrderByIdUseCaseImpl.class})
+    @Import({CheckoutIntentTransaction.class, StockWorkTransaction.class, StockReservationFlow.class, CreateOrderTransaction.class, GetOrderByIdUseCaseImpl.class, OrderPaymentTransaction.class})
     static class Config {
         @Bean JpaTransactionManager transactionManager(EntityManagerFactory factory) { return new JpaTransactionManager(factory); }
     }

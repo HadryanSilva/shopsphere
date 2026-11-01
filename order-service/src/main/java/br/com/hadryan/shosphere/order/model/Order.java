@@ -1,6 +1,7 @@
 package br.com.hadryan.shosphere.order.model;
 
 import br.com.hadryan.shosphere.order.model.enums.OrderStatus;
+import br.com.hadryan.shosphere.order.model.enums.OrderPaymentStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -47,6 +48,17 @@ public class Order extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private OrderStatus status = OrderStatus.PENDING_STOCK;
+
+    @Setter(lombok.AccessLevel.NONE)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", length = 30)
+    private OrderPaymentStatus paymentStatus;
+
+    public void startPayment() {
+        if (status != OrderStatus.PENDING_PAYMENT || paymentStatus != null)
+            throw new IllegalStateException("Order is not eligible for payment");
+        paymentStatus = OrderPaymentStatus.PROCESSING;
+    }
 
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal subtotal = BigDecimal.ZERO.setScale(2);

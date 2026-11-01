@@ -25,7 +25,7 @@ public class StockReservationFlow {
         var work = transaction.cartCompleted(orderId);
         try {
             return switch (work.phase()) {
-                case WAITING_CART, CLOSED -> work;
+                case WAITING_CART, CLOSED, PAYMENT_PENDING -> work;
                 case ABORT_PENDING -> abort(work);
                 case RESERVE_PENDING -> reserve(work);
                 case RESERVED -> observe(work, inventory.get(work));

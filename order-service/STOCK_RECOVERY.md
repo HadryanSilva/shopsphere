@@ -30,7 +30,7 @@ A V6__claim_stock_work.sql acrescenta claim_token, claimed_until e last_warning_
 à tabela local stock_work, com check para o par identidade/prazo do claim.
 Não altera V1–V5, estados públicos, reservas ou snapshots financeiros.
 
-due ordena por nextAttemptAt/orderId, exclui CLOSED, tentativas futuras e leases
+due ordena por nextAttemptAt/orderId, exclui CLOSED/PAYMENT_PENDING, tentativas futuras e leases
 vigentes e usa SKIP LOCKED. claim revalida elegibilidade e grava token UUID e
 prazo em transação curta. A agenda e o lease são campos distintos: progresso ou
 falha do fluxo não permite que outro worker adquira imediatamente o mesmo
@@ -110,3 +110,9 @@ V6 é aplicada apenas em schemas temporários dos testes nesta entrega. Nenhuma
 API pública, regra JWT, dependência, Gateway ou código do Inventory mudou.
 JARs reais de todos os serviços, inclusive Inventory, falhas entre processos e
 tokens reais foram validados posteriormente na [microtarefa 55](STOCK_OPERATION.md).
+
+Na [microtarefa 59](PAYMENT_HANDOFF.md), a aceitação de pagamento transfere
+StockWork RESERVED para PAYMENT_PENDING em commit atômico com o trabalho
+financeiro local. Essa fase não é selecionada por due/claim, limpa o claim
+anterior e ignora mutações de execuções antigas. O worker de estoque não
+reassume essa reserva após o lease; a coordenação passa ao fluxo de pagamento.

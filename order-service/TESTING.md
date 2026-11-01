@@ -722,3 +722,64 @@ login PKCE do frontend ou uma implantação externa completa. Não houve altera�
 de Keycloak, código de produção, APIs, migrations, dependências ou defaults.
 Schemas são exclusivos de teste e removidos pelo harness; logs ficam em
 build/checkout-integration/<UUID>/ e são verificados quanto a secret/JWT/endereço.
+
+## Microtarefa 59 — aceitação e transferência ao pagamento
+
+Contrato e limites em [PAYMENT_HANDOFF.md](PAYMENT_HANDOFF.md). V7 adiciona
+payment_work/payment_status e PAYMENT_PENDING, preservando V1–V6. A validação
+de upgrade existente passa agora por V5 → V6 → V7, preservando trabalho de
+estoque anterior e sem inscrever pedidos históricos em pagamento.
+
+Testes focados no módulo Order:
+
+```powershell
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+.\gradlew.bat test --offline --no-daemon --tests '*StockWorkPersistenceTests' --tests '*OrderPaymentControllerTests' --tests '*OrderControllerTests' --tests '*OrderServiceApplicationTests'
+```
+
+Cobertura nova: aceitação por proprietário, 202/200 e Location, body vazio,
+rejeição de campos/literais, GET/replay com paymentStatus, 404 equivalente para
+terceiro/ausente inclusive ADMIN, total/moeda do snapshot, estados incompatíveis,
+concorrência na mesma identidade e disputa com aborto. Falhas na inserção de
+payment_work e na atualização de stock_work comprovam rollback integral do
+trabalho, estado público e invalidação do claim.
+
+Os cenários de worker pausado recriam uma segunda instância do contexto Order
+e EntityManagerFactory contra o mesmo schema enquanto a primeira aguarda HTTP
+simulado. Após perda de lease e transferência, ACTIVE vencido, EXPIRED,
+CONFIRMED, falha técnica ou resposta inválida do worker antigo não abortam,
+cancelam, reabrem agenda ou colocam o pedido em revisão. Inventory é simulado
+nesses cenários; o Payment não é chamado nesta etapa.
+
+O JAR atualizado do Order é gerado antes da regressão de processos existente:
+
+```powershell
+.\gradlew.bat bootJar --offline --no-daemon
+$env:SHOPSPHERE_TEST_POSTGRES_URL = 'jdbc:postgresql://localhost:5432/order_db'
+$env:SHOPSPHERE_TEST_CHECKOUT_INTEGRATION = 'true'
+$env:SHOPSPHERE_TEST_STOCK_INTEGRATION = 'true'
+.\gradlew.bat test --offline --no-daemon --rerun-tasks
+```
+
+As duas suítes existentes usam os JARs disponíveis de Catalog/Cart/Inventory/
+Gateway e o Order atualizado. Validam regressão do checkout/estoque; não são a
+integração financeira dos seis serviços, prevista na etapa 62. O teste HTTP novo
+com PostgreSQL usa os controllers reais do Order e um decoder de identidade de
+teste. Não foi alterada configuração Keycloak nem executado login de frontend.
+O Gateway acrescenta GatewayOrderPaymentRoutingTests com servidor HTTP de Order
+simulado, preservando configuração de produção, Bearer/body/status/Location e
+isolamento de caminhos internos de Payment.
+
+Resultado em 2026-11-01: **377 testes aprovados no Order**, zero falhas, erros
+ou ignorados, incluindo 76 de StockWorkPersistenceTests, 17 do novo controller
+e os 30 cenários anteriores com processos reais (13 checkout e 17 estoque).
+O Gateway aprovou **96 testes**, zero falhas, erros ou ignorados, com
+`.\gradlew.bat test --offline --no-daemon --rerun-tasks` no respectivo módulo.
+`bootJar` do Order e `git diff --check` passaram. V7 foi aplicada somente em
+schemas temporários de teste, com Hibernate validate habilitado.
+
+Na primeira passagem focada, a introdução da dependência no controller antigo
+exigiu seu isolamento no novo OrderPaymentController; a configuração antiga
+ficou preservada. Um teste de propagação de erros também teve o stubbing
+Mockito corrigido para substituir uma chamada que já lançava exceção. As
+execuções focadas posteriores e a regressão final completa passaram.
