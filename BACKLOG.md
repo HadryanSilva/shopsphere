@@ -187,14 +187,28 @@ oito decisões ao final; microtarefa 56 concluída.
 
 Propõe simulador monetário persistente de desenvolvimento, aceite idempotente
 no Order, captura/compensação duráveis, transferência da coordenação de estoque
-e conclusão somente com provas monetária e de estoque compatíveis. Payment
-ainda é um esqueleto; não há implementação, cobrança real ou mudança de APIs,
-schema ou Keycloak nesta microtarefa. Frontend está fora do escopo.
+e conclusão somente com provas monetária e de estoque compatíveis. Na definição
+da microtarefa 56, Payment era um esqueleto; aquela entrega documental não
+implementou APIs, schema ou Keycloak. Frontend está fora do escopo.
 
 A sequência aprovada **57–62** cobre base/segurança do Payment, captura e
 compensação, coordenação no Order, cliente/fluxo, recuperação e integração real
-dos seis JARs. Executar uma entrega por vez; a próxima é a
-**57 — Preparar Payment local, persistência e segurança**.
+dos seis JARs. Executar uma entrega por vez.
+
+A microtarefa **57 — Preparar Payment local, persistência e segurança** foi
+concluída: perfil dev na porta 8085, datasource/JWT configuráveis, Flyway e V1
+de intenções/movimentos, Hibernate validate, open-in-view=false e Problem Details.
+Política interna exige PAYMENT_SERVICE, azp shopsphere-order e audiência
+shopsphere-api; demais caminhos/verbos negados. A role foi acrescentada à
+service account e ao escopo restrito do cliente no Keycloak local, preservando
+CART_CHECKOUT_SERVICE, INVENTORY_SERVICE e o mapper existente.
+Suíte completa com PostgreSQL e token real Keycloak: 56 testes aprovados, sem
+falhas ou ignorados; bootJar e diff --check aprovados.
+V1 aplicada somente em schemas temporários; ainda sem entidades JPA, casos de
+uso ou endpoints financeiros. Sem integração Order, mudança no Gateway ou
+frontend. Detalhes em [payment-service/README.md](payment-service/README.md)
+e validação em [payment-service/TESTING.md](payment-service/TESTING.md).
+A próxima é a **58 — Implementar captura e compensação simuladas duráveis**.
 
 ## Validação PostgreSQL
 

@@ -9,7 +9,7 @@
       resourceserver:
         jwt:
           issuer-uri: https://issuer.shopsphere.test
-          audiences: []
+          audiences: shopsphere-api
 
 services:
   catalog:

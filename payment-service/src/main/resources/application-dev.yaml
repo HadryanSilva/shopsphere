@@ -1,0 +1,14 @@
+server:
+  port: ${SHOPSPHERE_PAYMENT_PORT:8085}
+
+spring:
+  datasource:
+    url: ${SHOPSPHERE_PAYMENT_DB_URL:jdbc:postgresql://localhost:5432/payment_db}
+    username: ${SHOPSPHERE_PAYMENT_DB_USER:postgres}
+    password: ${SHOPSPHERE_PAYMENT_DB_PASSWORD:postgres}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${SHOPSPHERE_JWT_ISSUER:http://localhost:8180/realms/shopsphere}
+          audiences: ${SHOPSPHERE_JWT_AUDIENCE:shopsphere-api}
